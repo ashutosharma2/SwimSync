@@ -1,6 +1,6 @@
-# SwimSync: research, validation plan and proposed design
+# SwimSync: desk research and proposed design
 
-Status: research and proposals, 2026-10-21. Nothing here has been built, tested or validated with users. Every design section is a proposal for you to accept, change or reject. Sources were read on 2026-10-21; most support pages carry no date.
+Status: desk research and proposals, 2026-10-21; revised the same day after the decision not to do user research. Nothing here has been built or tested. Every design section is a proposal for you to accept, change or reject. Sources were read on 2026-10-21; most support pages carry no date.
 
 Labels used in the evidence tables: **Verified** (stated in the cited source), **Inferred** (my reasoning from verified facts), **Anecdotal** (one person's account), **Unknown** (no evidence found).
 
@@ -18,7 +18,7 @@ Labels used in the evidence tables: **Verified** (stated in the cited source), *
 
 **The most important finding challenges the brief's own priority.** Your incident may not be a database problem at all. If the pool admits walk-ins or its own members at the desk while an app holds a separate quota, the app's database can be perfectly correct and you still get turned away. A correct booking database is necessary but not sufficient. The thing that may actually fail is keeping one source of truth for capacity between the app and the front desk. That should shape the MVP.
 
-**Recommendation:** spend the first one to two weeks on discovery (section 6) before writing substantial code. You can study the concurrency design in parallel, because it's valuable whichever way the discovery goes.
+**Recommendation:** build it as an engineering response to your incident, without further validation. Because the cause is unknown, design SwimSync so that none of the causes a booking system can control could produce your incident (section 3), and say plainly which causes it can't control. The framing that holds up in an interview: "one real incident inspired this; the system is built so that none of the plausible software causes could produce it."
 
 ## 2. Personal incident analysis
 
@@ -54,7 +54,16 @@ Labels used in the evidence tables: **Verified** (stated in the cited source), *
 | Unreliable reservation | Booking marked confirmed before capacity was reserved, or a retry duplicated it | Duplicate or excess confirmations in the system's records |
 | Manual or operational error | The desk didn't see the app's list, or a staff miscount | Bookings exist but weren't communicated to the desk |
 
-Only the operator's records can distinguish these. Your interviews with operators (section 6) are the way to learn which causes are common.
+Without the operator's records these can't be told apart, so SwimSync treats all six as hypotheses. The useful question becomes: which of them can a booking system prevent?
+
+| Cause | Can software prevent it? | Proposed SwimSync response (proposal, not decided) |
+|---|---|---|
+| Concurrency oversell | Yes | Reserve capacity in one atomic database statement; idempotent requests |
+| Two inventories | Yes, if every admission goes through one system | The desk records walk-ins and member admissions against the same session capacity. Assumption: the facility uses SwimSync at the desk. |
+| Capacity changed late | Partly | An operator capacity change flags affected bookings and notifies swimmers before they travel. It can't help if nobody records the change. |
+| Stale display | Yes | Displayed availability is advisory; only the server's reservation confirms |
+| Unreliable reservation | Yes | No "pending" state: confirmed only after the reservation commits |
+| Manual or operational error | No | An audit log makes it visible afterwards |
 
 **Coherence of the three problem areas:** A (integrity) and C (closures and capacity changes) are one product. Both are about keeping the booking promise in line with real capacity, and C is the operational half of A. B (waitlist recovery) is a separate feature. It fills a place after a cancellation but does nothing for your incident, and Cult already offers a version of it for classes.
 
@@ -72,8 +81,8 @@ Only the operator's records can distinguish these. Your interviews with operator
 | 6 | Playo lists swimming venues by city and has a venue-partner app with a scheduler and booking confirmations | [playo.co](https://playo.co/), [Playo app listing](https://apps.apple.com/app/id1018786950), [Venue Partner app](https://apps.apple.com/us/app/-/id1057092085) | Read 2026-10-21 | Verified (features listed); capacity handling Unknown | Slot booking for pools exists in India |
 | 7 | Hudle's partner app offers slot and booking management, rescheduling and cancellations, and customer notifications | [Hudle Partner app](https://apps.apple.com/us/app/-/id1569130632), [hudle.in venues](https://hudle.in/list-your-sports-venue) | Read 2026-10-21 | Verified (marketing); pool-specific Unknown | Operator-side tools exist |
 | 8 | Pool-specific booking software sells time-slot tickets with capacity controls | [anny](https://anny.co/en/solutions/swimming-pool-booking-system), [booked.it](https://booked.it/industries/swimming-pools/) | Read 2026-10-21 | Verified (marketing) | "Capacity-limited slots" alone is not a differentiator |
-| 9 | How independent Indian pools track occupancy (app, register, WhatsApp, phone) | None found | n/a | Unknown | Must come from operator interviews |
-| 10 | How often booked swimmers are turned away | None found | n/a | Unknown | Must come from swimmer interviews; don't claim it's common |
+| 9 | How independent Indian pools track occupancy (app, register, WhatsApp, phone) | None found | n/a | Unknown | Not investigated (no user research, by decision); stays unknown |
+| 10 | How often booked swimmers are turned away | None found | n/a | Unknown | Not investigated; never claim it's common |
 | 11 | Public APIs for Cult, Playo or Hudle | None found | n/a | Unknown; assume none | No integration in scope |
 
 ## 5. Competitor analysis
@@ -85,57 +94,25 @@ Only the operator's records can distinguish these. Your interviews with operator
 | Hudle | Venue management: slots, cancellations, notifications, payments | Pool-specific workflows |
 | Pool software abroad (anny, booked.it and others) | Time-slot capacity, lanes, payments | Not India-focused; desk/app reconciliation unclear |
 
-**Honest conclusion:** SwimSync as "a booking app with capacity and a waitlist" would duplicate existing products. The only gap with any support so far is the **app-versus-desk capacity mismatch at partner pools, and disruption notice before travel**. Even that is inferred from one incident and two support articles. It needs operator evidence.
+**Honest conclusion:** SwimSync as "a booking app with capacity and a waitlist" would duplicate existing products. The only gap with any support so far is the **app-versus-desk capacity mismatch at partner pools, and disruption notice before travel**. Even that is inferred from one incident and two support articles, so the README should state it as an assumption.
 
-## 6. Problem-validation plan
+## 6. Framing the problem without user research
 
-**Sample:** 5 to 10 swimmers who booked a pool slot through any app in the last 6 months, plus 2 to 3 people who run or staff a pool desk (a college pool, a club, a society or an affiliated centre). This is exploratory discovery, not statistical proof. It tells you whether the problem exists and what shape it takes, not how common it is.
+You decided not to do interviews or surveys. That's a legitimate choice for an engineering portfolio project, as long as the claims stay within the evidence.
 
-### Swimmer interview (15 minutes)
+**What you can claim:**
 
-1. How do you usually get into a pool session? Walk-in, app, membership, phone?
-2. Tell me about the last time you booked a swim. Which app, how far ahead?
-3. Has a booked session ever not gone as expected? What happened, step by step?
-4. When you arrived, what did staff say? Did you see your booking on their side?
-5. Have you seen the pool much more crowded than the booking suggested?
-6. Has a session been cancelled or changed on you? How and when did you find out?
-7. Before you travel, do you check anything? Call the pool, check the app again?
-8. Have you cancelled a booking? Did anyone else get the place, as far as you know?
-9. What did the problem cost you: time, money, a missed swim?
-10. What do you do now to avoid it?
+- You experienced one incident where a booking wasn't honoured because the pool was at capacity.
+- Desk research shows the main competitor runs swimming through affiliated pools and lets gym members walk in without booking (section 4). That makes a shared-capacity mismatch plausible, though not proven.
+- SwimSync guarantees the invariants in your brief and handles the causes software can control (section 3), proven by tests and drills.
 
-Avoid asking "would you use an app that...". Ask about what already happened.
+**What you can't claim:**
 
-### Operator interview (20 minutes)
+- That the problem is common, or what caused your incident.
+- That any platform is defective.
+- That operators want SwimSync.
 
-1. How do people get into a session here: walk-in, members, which apps?
-2. Who decides the capacity for a session, and where is it written down?
-3. When an app booking arrives, how does the desk see it?
-4. Do walk-ins, members and app bookings share the same capacity? How is that tracked?
-5. Tell me about the last time more people turned up than you could take. What happened?
-6. When capacity drops (lifeguard absent, lanes for lessons, maintenance), how do you update the apps and tell booked swimmers?
-7. How often does that happen in a month?
-8. How do cancellations and no-shows work today? Does anyone fill freed places?
-9. What workarounds do you use (WhatsApp groups, calling, paper lists)? How long do they take?
-10. If you could change one thing about bookings, what would it be? Does it have to live inside the app you already use?
-
-### Evidence-tracking template
-
-| ID | Date | Role | Platform | Incident (their words) | Category | Cost to them | Current workaround | Quote (with consent) | Confidence |
-|---|---|---|---|---|---|---|---|---|---|
-
-**Categories:** OVERSELL, TWO-INVENTORY, LATE-CAPACITY-CHANGE, CLOSURE-NOT-COMMUNICATED, CANCELLATION-NOT-REFILLED, NO-SHOW, OTHER.
-
-Group the incidents by category after all the interviews. Look for categories mentioned independently by at least two people.
-
-### Proceed, pivot or stop (set these before interviewing)
-
-- **Proceed with integrity plus capacity-change notices:** at least 3 swimmers describe a concrete turned-away or capacity-change incident, or at least 1 operator describes reconciling app bookings with the desk by hand.
-- **Pivot to cancellation recovery:** incidents are mostly unfilled cancellations or no-shows, not over-capacity.
-- **Pivot to a generic engineering demo:** few real incidents. You build the same system and present it honestly as a capacity-integrity reference design, not a validated product.
-- **Stop the product framing:** nobody reports the problem and operators say their current setup works.
-
-These thresholds are judgement calls for a small exploratory sample, not statistical tests.
+**Evidence you do have:** your own incident record in `docs/research/incident.md`. Fill it in from memory and any screenshots you kept; it's the only primary evidence in the project, and it takes minutes.
 
 ## 7. Recommended MVP (proposal)
 
@@ -421,7 +398,7 @@ Closing the browser deletes nothing.
 
 | Phase | Deliverables | Time | Done when |
 |---|---|---|---|
-| 1 Research and validation | Interviews, evidence table, problem statement, proceed/pivot/stop decision | 2 weeks | A decision is written down, with evidence |
+| 1 Problem framing | Incident record, desk research (done), problem statement, which causes to design against | 1 week | Problem statement and MVP scope written down |
 | 2 Local core | Schema, booking, cancel, idempotency, outbox, tests 1 to 3 and 5 | 3 to 4 weeks | All invariant tests pass repeatedly |
 | 3 MVP interface | Swimmer and operator views, inbox, audit view | 3 weeks | A demo script runs end to end |
 | 4 Infra learning | Terraform for the VPC design, validate, plan reviewed | 2 weeks | Validate passes; plan reviewed; nothing applied |
@@ -442,10 +419,10 @@ The README follows your 17-point outline. **Provisional CV line, with no metrics
 
 ## 18. Immediate next steps
 
-1. Write down your own incident evidence (section 2) this week.
-2. Run 3 swimmer interviews and 1 operator interview, then review the categories before doing more.
-3. Read the PostgreSQL Read Committed and row-locking sections, and explain the conditional update back in your own words.
-4. Decide whether SwimSync replaces Project 1 or runs alongside it. They overlap heavily: a VPC design, drills, a cost ceiling.
-5. Make the open design decisions: waitlist in or out of the MVP, the capacity-reduction policy, and the single-source-of-truth question from section 1.
+1. Fill in `docs/research/incident.md` from memory and any screenshots.
+2. Decide which of the six causes in section 3 SwimSync designs against, and why.
+3. Decide the MVP scope (section 7), including whether the waitlist is in.
+4. Read the PostgreSQL Read Committed and row-locking sections, and explain the conditional update in your own words.
+5. Decide the capacity-reduction policy: which bookings become at risk.
 
-**What to do first:** step 1 and the first interviews. The rest of the design depends on which cause from section 3 turns out to be real.
+**What to do first:** step 2. It decides the MVP, the schema and the drills.

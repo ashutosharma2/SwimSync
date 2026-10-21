@@ -21,7 +21,7 @@
 
 ## Problem statement
 
-<!-- The narrowest problem, as validated by your interviews. -->
+<!-- The problem as framed from your incident. The cause is unknown; say which plausible causes SwimSync guards against. -->
 
 ## Research findings and limitations
 
