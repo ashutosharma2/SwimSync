@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Terraform: state and plans can contain secrets
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+crash.log
+
+# Secrets: never commit keys or credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.aws/
+*accessKeys*.csv
+*credentials*.csv
+
+# Raw interview notes stay private until anonymised
+docs/research/raw/
