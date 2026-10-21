@@ -5,6 +5,7 @@ The swimmer is identified by the X-Swimmer-Id header. That is a demo shortcut, n
 Run: .venv/bin/uvicorn --app-dir backend app.main:app --port 8001
 """
 
+import os
 import uuid
 from typing import Annotated
 
@@ -14,7 +15,25 @@ from psycopg.errors import UniqueViolation
 
 from . import booking, db
 
+INSTANCE = os.environ.get("SWIMSYNC_INSTANCE", "local")
+
 app = FastAPI(title="SwimSync")
+
+
+@app.middleware("http")
+async def tag_instance(request, call_next):
+    # Says which copy of the API answered, so the drills can see traffic move between instances.
+    response = await call_next(request)
+    response.headers["X-Instance"] = INSTANCE
+    return response
+
+
+@app.get("/health")
+def health():
+    # Shallow on purpose: it only says this process can answer. If it checked the database, a
+    # database outage would mark every instance down at once and the load balancer would have
+    # nowhere to send anyone. Database failure is drill B's subject.
+    return {"status": "ok", "instance": INSTANCE}
 
 SwimmerId = Annotated[str, Header(alias="X-Swimmer-Id", pattern=r"^[A-Za-z0-9_-]{1,64}$")]
 IdempotencyKey = Annotated[uuid.UUID, Header(alias="Idempotency-Key")]
