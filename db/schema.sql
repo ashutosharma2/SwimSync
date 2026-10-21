@@ -1,7 +1,7 @@
--- SwimSync schema, MVP step 1.
+-- SwimSync schema, MVP steps 1 and 2.
 -- Applying this file resets the database: it drops every SwimSync table first. Local development only.
 
-DROP TABLE IF EXISTS idempotency_keys, bookings, sessions;
+DROP TABLE IF EXISTS notifications, outbox, idempotency_keys, bookings, sessions;
 
 CREATE TABLE sessions (
     id        bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -37,4 +37,32 @@ CREATE TABLE idempotency_keys (
     response    jsonb       NOT NULL,
     created_at  timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (swimmer_id, key)
+);
+
+-- Notifications waiting to be delivered. Written in the same transaction as the booking change,
+-- so a row exists if and only if that change committed. It is a request to notify, never the
+-- record of booking status: the bookings table is.
+CREATE TABLE outbox (
+    id              bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    swimmer_id      text        NOT NULL,
+    booking_id      bigint      NOT NULL REFERENCES bookings (id),
+    kind            text        NOT NULL CHECK (kind IN ('booking_confirmed', 'booking_cancelled')),
+    message         text        NOT NULL,
+    status          text        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'failed')),
+    attempts        integer     NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz NOT NULL DEFAULT now(),
+    last_error      text,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    delivered_at    timestamptz
+);
+
+CREATE INDEX outbox_due ON outbox (next_attempt_at) WHERE status = 'pending';
+
+-- The in-app inbox. One entry per outbox row: a redelivery after a crash can't create a duplicate.
+CREATE TABLE notifications (
+    id         bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    outbox_id  bigint      NOT NULL UNIQUE REFERENCES outbox (id),
+    swimmer_id text        NOT NULL,
+    message    text        NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
 );

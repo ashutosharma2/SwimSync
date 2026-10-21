@@ -1,4 +1,4 @@
-"""SwimSync HTTP API, MVP step 1: browse sessions, book, cancel, list my bookings.
+"""SwimSync HTTP API: browse sessions, book, cancel, list my bookings and my notifications.
 
 The swimmer is identified by the X-Swimmer-Id header. That is a demo shortcut, not authentication.
 
@@ -48,5 +48,12 @@ def cancel_booking(booking_id: int, swimmer_id: SwimmerId):
 
 @app.get("/me/bookings")
 def my_bookings(swimmer_id: SwimmerId):
+    # The authoritative booking status. Notifications below are only messages about it.
     with db.connect() as conn:
         return booking.my_bookings(conn, swimmer_id)
+
+
+@app.get("/me/notifications")
+def my_notifications(swimmer_id: SwimmerId):
+    with db.connect() as conn:
+        return booking.my_notifications(conn, swimmer_id)

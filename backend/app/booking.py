@@ -28,7 +28,7 @@ def book(conn, session_id, swimmer_id, key):
     # 1. Lock the session row. Every other booking or cancel for this session waits here until
     #    we commit, so "is there room?" and "take a place" can't be split by another request.
     session = conn.execute(
-        "SELECT capacity, booked FROM sessions WHERE id = %s FOR UPDATE", (session_id,)
+        "SELECT name, capacity, booked FROM sessions WHERE id = %s FOR UPDATE", (session_id,)
     ).fetchone()
     if session is None:
         return 404, {"error": "session not found"}
@@ -61,6 +61,10 @@ def book(conn, session_id, swimmer_id, key):
             (session_id, swimmer_id),
         ).fetchone()["id"]
         conn.execute("UPDATE sessions SET booked = booked + 1 WHERE id = %s", (session_id,))
+        _queue_notification(
+            conn, swimmer_id, booking_id, "booking_confirmed",
+            f"Your booking for {session['name']} is confirmed.",
+        )
         status = 201
         body = {"booking_id": booking_id, "session_id": session_id, "status": "confirmed"}
 
@@ -76,7 +80,9 @@ def book(conn, session_id, swimmer_id, key):
 
 def cancel(conn, booking_id, swimmer_id):
     found = conn.execute(
-        "SELECT session_id FROM bookings WHERE id = %s AND swimmer_id = %s", (booking_id, swimmer_id)
+        "SELECT b.session_id, s.name FROM bookings b JOIN sessions s ON s.id = b.session_id"
+        " WHERE b.id = %s AND b.swimmer_id = %s",
+        (booking_id, swimmer_id),
     ).fetchone()
     if found is None:
         return 404, {"error": "booking not found"}
@@ -92,7 +98,28 @@ def cancel(conn, booking_id, swimmer_id):
 
     conn.execute("UPDATE bookings SET status = 'cancelled', cancelled_at = now() WHERE id = %s", (booking_id,))
     conn.execute("UPDATE sessions SET booked = booked - 1 WHERE id = %s", (found["session_id"],))
+    _queue_notification(
+        conn, swimmer_id, booking_id, "booking_cancelled",
+        f"Your booking for {found['name']} is cancelled.",
+    )
     return 200, {"booking_id": booking_id, "status": "cancelled", "already_cancelled": False}
+
+
+def _queue_notification(conn, swimmer_id, booking_id, kind, message):
+    # Same transaction as the booking change: the notice exists if and only if the change commits.
+    # Delivery happens later, in the outbox worker, outside this transaction.
+    conn.execute(
+        "INSERT INTO outbox (swimmer_id, booking_id, kind, message) VALUES (%s, %s, %s, %s)",
+        (swimmer_id, booking_id, kind, message),
+    )
+
+
+def my_notifications(conn, swimmer_id):
+    rows = conn.execute(
+        "SELECT id, message, created_at FROM notifications WHERE swimmer_id = %s ORDER BY id",
+        (swimmer_id,),
+    ).fetchall()
+    return [{"id": row["id"], "message": row["message"], "created_at": row["created_at"].isoformat()} for row in rows]
 
 
 def my_bookings(conn, swimmer_id):
