@@ -9,6 +9,11 @@ Hard limits (any breach fails the drill), set before the first run:
 
 Everything else is recorded with no pass mark.
 
+Evidence rule: in the after-commit and before-commit modes, a run that passes the hard limits is
+INCONCLUSIVE unless it shows the risky case actually happened:
+  after-commit   at least one request was cut off after its commit and the retry got the stored answer
+  before-commit  at least one request was cut off before its commit and the retry booked fresh
+
 Run (normally via run.py): python drills/a/analyse.py drills/results/a-<timestamp> --db postgresql:///swimsync_drill
 """
 
@@ -53,6 +58,7 @@ def main():
     attempts = [r for r in records if r["type"] == "attempt"]
     finals = [r for r in records if r["type"] == "final"]
     kill, restart = events["kill_a1"], events["restart_a1"]
+    mode = events.get("mode", "plain")
 
     def phase(ts):
         return "before" if ts < kill else "during" if ts < restart else "after"
@@ -93,6 +99,43 @@ def main():
     false_failures = [f for f in finals if f["op"] == "book" and f["status"] == 409
                       and keys.get(f["key"], {}).get("status_code") == 201]
 
+    # Evidence: requests cut off mid-flight (HAProxy 502, a dropped connection, or a client timeout)
+    # and what their retry got. A 503 doesn't count: the request never reached a1. Only cuts while a1
+    # was down count as the kill's evidence; other timeouts are reported separately.
+    def in_kill_window(ts):
+        return kill <= ts < restart
+
+    tries_by_key = {}
+    for a in attempts:
+        if a["op"] == "book":
+            tries_by_key.setdefault(a["key"], []).append(a)
+    cuts = {"after_commit": {"kill": 0, "other": 0}, "before_commit": {"kill": 0, "other": 0}}
+    for tries in tries_by_key.values():
+        tries.sort(key=lambda a: a["attempt"])
+        cut = next((t for t in tries[:-1] if t["status"] in (502, None)), None)
+        if cut is None or tries[-1]["status"] not in (200, 201):
+            continue
+        # 200: the first attempt had committed and the retry got the stored answer.
+        # 201: the first attempt had rolled back and the retry booked fresh.
+        kind = "after_commit" if tries[-1]["status"] == 200 else "before_commit"
+        cuts[kind]["kill" if in_kill_window(cut["ts"]) else "other"] += 1
+    # Each swimmer cancels a booking once, so "already cancelled" as the final answer means an earlier
+    # attempt committed the cancel and its response was lost.
+    cancel_lost = {"kill": 0, "other": 0}
+    for f in finals:
+        if f["op"] == "cancel" and f["status"] == 200 and (f["body"] or {}).get("already_cancelled"):
+            cancel_lost["kill" if in_kill_window(f["ts"]) else "other"] += 1
+    evidence = {
+        "book_committed_response_lost_retry_got_stored_answer": cuts["after_commit"],
+        "book_rolled_back_retry_booked_fresh": cuts["before_commit"],
+        "cancel_committed_response_lost": cancel_lost,
+    }
+    exercised = {
+        "plain": True,
+        "after-commit": cuts["after_commit"]["kill"] + cancel_lost["kill"] > 0,
+        "before-commit": cuts["before_commit"]["kill"] > 0,
+    }[mode]
+
     inconsistent = [s for s in sessions if s["booked"] != s["confirmed"] or s["confirmed"] > s["capacity"]]
 
     failed = [a for a in attempts if a["status"] is None or a["status"] >= 500]
@@ -117,6 +160,9 @@ def main():
 
     summary = {
         "label": "Local experiment on one machine, not proof of AWS high availability",
+        "mode": mode,
+        "evidence": evidence,
+        "risky_case_exercised": exercised,
         "hard_limits": {
             "duplicates": {"keys_not_one_to_one": len(key_per_booking), "double_holders": len(double_holders),
                            "pass": not key_per_booking and not double_holders},
@@ -139,11 +185,12 @@ def main():
         },
     }
     passed = all(v["pass"] for v in summary["hard_limits"].values())
-    summary["result"] = "PASS" if passed else "FAIL"
+    summary["result"] = "FAIL" if not passed else "PASS" if exercised else "INCONCLUSIVE"
     (out / "summary.json").write_text(json.dumps(summary, indent=2))
 
     r = summary["recorded"]
-    print(f"\nDrill A: {summary['result']}  ({summary['label']})")
+    print(f"\nDrill A, mode {mode}: {summary['result']}  ({summary['label']})")
+    print(f"  evidence: {evidence}")
     for name, limit in summary["hard_limits"].items():
         print(f"  hard limit {name:16} {'pass' if limit['pass'] else 'FAIL'}")
     print(f"  operations {r['operations']}, attempts {r['attempts']}, retries {r['retries']}, "

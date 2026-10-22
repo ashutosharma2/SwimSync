@@ -5,7 +5,9 @@ The swimmer is identified by the X-Swimmer-Id header. That is a demo shortcut, n
 Run: .venv/bin/uvicorn --app-dir backend app.main:app --port 8001
 """
 
+import logging
 import os
+import time
 import uuid
 from typing import Annotated
 
@@ -16,6 +18,22 @@ from psycopg.errors import UniqueViolation
 from . import booking, db
 
 INSTANCE = os.environ.get("SWIMSYNC_INSTANCE", "local")
+
+# Drill-only delays, off (0) unless drills/a/run.py sets them. They widen the window in which a
+# killed instance is in the middle of a booking or cancel: before the commit, or after it.
+DELAY_BEFORE_COMMIT = int(os.environ.get("SWIMSYNC_DRILL_DELAY_BEFORE_COMMIT_MS", "0")) / 1000
+DELAY_AFTER_COMMIT = int(os.environ.get("SWIMSYNC_DRILL_DELAY_AFTER_COMMIT_MS", "0")) / 1000
+if DELAY_BEFORE_COMMIT or DELAY_AFTER_COMMIT:
+    logging.getLogger("swimsync").warning(
+        "DRILL DELAYS ON (instance %s): %.0f ms before commit, %.0f ms after commit",
+        INSTANCE, DELAY_BEFORE_COMMIT * 1000, DELAY_AFTER_COMMIT * 1000,
+    )
+
+
+def drill_pause(seconds):
+    if seconds:
+        time.sleep(seconds)
+
 
 app = FastAPI(title="SwimSync")
 
@@ -50,11 +68,13 @@ def create_booking(session_id: int, swimmer_id: SwimmerId, idempotency_key: Idem
     try:
         with db.connect() as conn:
             status, body = booking.book(conn, session_id, swimmer_id, str(idempotency_key))
+            drill_pause(DELAY_BEFORE_COMMIT)  # still inside the transaction, holding the session lock
     except UniqueViolation:
         # Only reachable when the same key is used for two different sessions at the same moment.
         # The transaction rolled back, so nothing was booked.
         status, body = 409, {"error": "a conflicting request with the same Idempotency-Key is in progress"}
     # Leaving the `with` block committed the transaction, so a 201 is only sent once the booking is saved.
+    drill_pause(DELAY_AFTER_COMMIT)  # committed, but the swimmer hasn't been told yet
     return JSONResponse(status_code=status, content=body)
 
 
@@ -62,6 +82,8 @@ def create_booking(session_id: int, swimmer_id: SwimmerId, idempotency_key: Idem
 def cancel_booking(booking_id: int, swimmer_id: SwimmerId):
     with db.connect() as conn:
         status, body = booking.cancel(conn, booking_id, swimmer_id)
+        drill_pause(DELAY_BEFORE_COMMIT)
+    drill_pause(DELAY_AFTER_COMMIT)
     return JSONResponse(status_code=status, content=body)
 
 

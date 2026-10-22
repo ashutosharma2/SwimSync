@@ -5,9 +5,15 @@ and resets it at the start. Results go to drills/results/a-<timestamp>/.
 
 Timeline: load runs for 60 s; instance a1 gets kill -9 at 20 s and is restarted at 40 s.
 
-Run: .venv/bin/python drills/a/run.py
+Modes:
+  plain          no delays (the original drill)
+  after-commit   300 ms after each commit: a kill loses responses for saved bookings (tests duplicates)
+  before-commit  100 ms before each commit, inside the lock: a kill rolls back (tests false successes)
+
+Run: .venv/bin/python drills/a/run.py --mode after-commit
 """
 
+import argparse
 import json
 import os
 import pathlib
@@ -29,6 +35,8 @@ DRILL_DB = "swimsync_drill"
 DB_URL = f"postgresql:///{DRILL_DB}"
 
 DURATION, KILL_AT, RESTART_AT = 60, 20, 40
+# Drill delays per mode, in ms: (before commit, after commit).
+MODES = {"plain": (0, 0), "after-commit": (0, 300), "before-commit": (100, 0)}
 SESSIONS, CAPACITY = 3, 10
 
 
@@ -51,8 +59,11 @@ def port_is_free(port):
         return sock.connect_ex(("127.0.0.1", port)) != 0
 
 
-def start_api(name, port, out):
-    env = dict(os.environ, DATABASE_URL=DB_URL, SWIMSYNC_INSTANCE=name)
+def start_api(name, port, out, mode):
+    before, after = MODES[mode]
+    env = dict(os.environ, DATABASE_URL=DB_URL, SWIMSYNC_INSTANCE=name,
+               SWIMSYNC_DRILL_DELAY_BEFORE_COMMIT_MS=str(before),
+               SWIMSYNC_DRILL_DELAY_AFTER_COMMIT_MS=str(after))
     log = open(out / f"{name}.log", "a")
     return subprocess.Popen(
         [str(VENV_BIN / "uvicorn"), "--app-dir", str(ROOT / "backend"), "app.main:app",
@@ -78,6 +89,10 @@ def sleep_until(t):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=sorted(MODES), default="plain")
+    mode = parser.parse_args().mode
+
     for port in (8001, 8002, 8080):
         if not port_is_free(port):
             raise SystemExit(f"port {port} is in use; stop whatever is running there first")
@@ -85,12 +100,12 @@ def main():
     if haproxy_bin is None:
         raise SystemExit("haproxy not found (brew install haproxy)")
 
-    out = ROOT / "drills" / "results" / f"a-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    out = ROOT / "drills" / "results" / f"a-{mode}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     out.mkdir(parents=True)
     reset_database()
 
-    events = {}
-    a1, a2 = start_api("a1", 8001, out), start_api("a2", 8002, out)
+    events = {"mode": mode}
+    a1, a2 = start_api("a1", 8001, out, mode), start_api("a2", 8002, out, mode)
     wait_for("http://127.0.0.1:8001/health")
     wait_for("http://127.0.0.1:8002/health")
     haproxy = subprocess.Popen([haproxy_bin, "-f", str(HERE / "haproxy.cfg"), "-db"],
@@ -101,7 +116,7 @@ def main():
     events["load_start"] = time.time()
     load = subprocess.Popen([sys.executable, str(HERE / "load.py"), "--out", str(out / "attempts.jsonl"),
                              "--duration", str(DURATION)])
-    print(f"load running for {DURATION}s; killing a1 at {KILL_AT}s, restarting at {RESTART_AT}s")
+    print(f"mode {mode}: load running for {DURATION}s; killing a1 at {KILL_AT}s, restarting at {RESTART_AT}s")
 
     sleep_until(events["load_start"] + KILL_AT)
     a1.send_signal(signal.SIGKILL)
@@ -110,7 +125,7 @@ def main():
     print("a1 killed (SIGKILL)")
 
     sleep_until(events["load_start"] + RESTART_AT)
-    a1 = start_api("a1", 8001, out)
+    a1 = start_api("a1", 8001, out, mode)
     events["restart_a1"] = time.time()
     print("a1 restarted")
 

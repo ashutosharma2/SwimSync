@@ -1,0 +1,98 @@
+{
+  "label": "Local experiment on one machine, not proof of AWS high availability",
+  "mode": "before-commit",
+  "evidence": {
+    "book_committed_response_lost_retry_got_stored_answer": {
+      "kill": 3,
+      "other": 7
+    },
+    "book_rolled_back_retry_booked_fresh": {
+      "kill": 5,
+      "other": 7
+    },
+    "cancel_committed_response_lost": {
+      "kill": 1,
+      "other": 11
+    }
+  },
+  "risky_case_exercised": true,
+  "hard_limits": {
+    "duplicates": {
+      "keys_not_one_to_one": 0,
+      "double_holders": 0,
+      "pass": true
+    },
+    "false_successes": {
+      "count": 0,
+      "pass": true
+    },
+    "consistency": {
+      "sessions": [
+        {
+          "id": 1,
+          "capacity": 10,
+          "booked": 10,
+          "confirmed": 10
+        },
+        {
+          "id": 2,
+          "capacity": 10,
+          "booked": 9,
+          "confirmed": 9
+        },
+        {
+          "id": 3,
+          "capacity": 10,
+          "booked": 10,
+          "confirmed": 10
+        }
+      ],
+      "pass": true
+    }
+  },
+  "recorded": {
+    "operations": 1245,
+    "attempts": 1547,
+    "retries": 302,
+    "failed_attempts": 328,
+    "failed_attempts_after_kill": 308,
+    "detection_s": 1.01,
+    "errors_stopped_after_s": 52.96,
+    "rejoin_s": 3.12,
+    "outcome_unknown_to_client": 26,
+    "outcome_unknown_but_committed": 6,
+    "told_no_but_booked": 0,
+    "by_phase": {
+      "before": {
+        "attempts": 505,
+        "failed": 20,
+        "p50_ms": 555.3,
+        "p95_ms": 1480.3,
+        "answered_by": {
+          "a2": 243,
+          "a1": 242
+        }
+      },
+      "during": {
+        "attempts": 549,
+        "failed": 58,
+        "p50_ms": 524.6,
+        "p95_ms": 1511.5,
+        "answered_by": {
+          "a2": 491
+        }
+      },
+      "after": {
+        "attempts": 493,
+        "failed": 250,
+        "p50_ms": 247.4,
+        "p95_ms": 1619.2,
+        "answered_by": {
+          "a2": 152,
+          "a1": 91
+        }
+      }
+    }
+  },
+  "result": "PASS"
+}
