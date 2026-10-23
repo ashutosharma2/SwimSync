@@ -95,6 +95,28 @@ def main():
     # Recorded: operations whose outcome the client never learned, and what the database says.
     unknown = [f for f in finals if f["status"] is None]
     unknown_committed = sum(1 for f in unknown if f["op"] == "book" and keys.get(f["key"], {}).get("status_code") == 201)
+
+    # After giving up, the client checks "my bookings" once. If that check says "booked", it counts as
+    # telling the swimmer "booked", so a wrong one is a false success.
+    resolution = {"checked": 0, "check_failed": 0, "matches_database": 0, "differs_from_database": 0}
+    for f in unknown:
+        if f.get("resolved") is None:
+            resolution["check_failed"] += 1
+            continue
+        resolution["checked"] += 1
+        if f["op"] == "book":
+            found = f["resolved"]["booking_id"]
+            if found is not None:
+                row = bookings.get(found)
+                if row is None or row["swimmer_id"] != f["swimmer"] or row["session_id"] != f["session"]:
+                    false_successes.append(f)
+            committed = keys.get(f["key"], {}).get("status_code") == 201
+            # "Differs" is possible without a bug: an overloaded request can still commit after the check.
+            resolution["matches_database" if (found is not None) == committed else "differs_from_database"] += 1
+        else:
+            told = f["resolved"]["status"]
+            actual = bookings.get(f["booking_id"], {}).get("status")
+            resolution["matches_database" if told == actual else "differs_from_database"] += 1
     # Recorded: the client was told "no" but the database says the booking was made.
     false_failures = [f for f in finals if f["op"] == "book" and f["status"] == 409
                       and keys.get(f["key"], {}).get("status_code") == 201]
@@ -180,6 +202,7 @@ def main():
             "rejoin_s": round(proxy["UP"] - restart, 2) if "UP" in proxy and proxy["UP"] > restart else None,
             "outcome_unknown_to_client": len(unknown),
             "outcome_unknown_but_committed": unknown_committed,
+            "after_giving_up_checked_my_bookings": resolution,
             "told_no_but_booked": len(false_failures),
             "by_phase": by_phase,
         },
@@ -199,6 +222,7 @@ def main():
           f"rejoin {r['rejoin_s']} s after restart")
     print(f"  outcome unknown to client: {r['outcome_unknown_to_client']} "
           f"({r['outcome_unknown_but_committed']} committed); told no but booked: {r['told_no_but_booked']}")
+    print(f"  after giving up, checked my bookings: {r['after_giving_up_checked_my_bookings']}")
     for name, p in r["by_phase"].items():
         print(f"  {name:6} attempts {p['attempts']:5} failed {p['failed']:3} "
               f"p50 {p['p50_ms']} ms p95 {p['p95_ms']} ms answered by {p['answered_by']}")

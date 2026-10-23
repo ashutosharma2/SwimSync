@@ -8,7 +8,9 @@ Timeline: load runs for 60 s; instance a1 gets kill -9 at 20 s and is restarted 
 Modes:
   plain          no delays (the original drill)
   after-commit   300 ms after each commit: a kill loses responses for saved bookings (tests duplicates)
-  before-commit  100 ms before each commit, inside the lock: a kill rolls back (tests false successes)
+  before-commit  20 ms before each commit, inside the lock: a kill rolls back (tests false successes).
+                 Kept short because every booking for the session waits behind it; 100 ms overloaded
+                 the run (about 10 requests a second per session against about 25 wanted).
 
 Run: .venv/bin/python drills/a/run.py --mode after-commit
 """
@@ -36,7 +38,7 @@ DB_URL = f"postgresql:///{DRILL_DB}"
 
 DURATION, KILL_AT, RESTART_AT = 60, 20, 40
 # Drill delays per mode, in ms: (before commit, after commit).
-MODES = {"plain": (0, 0), "after-commit": (0, 300), "before-commit": (100, 0)}
+MODES = {"plain": (0, 0), "after-commit": (0, 300), "before-commit": (20, 0)}
 SESSIONS, CAPACITY = 3, 10
 
 

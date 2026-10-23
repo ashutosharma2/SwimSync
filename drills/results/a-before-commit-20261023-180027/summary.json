@@ -1,0 +1,104 @@
+{
+  "label": "Local experiment on one machine, not proof of AWS high availability",
+  "mode": "before-commit",
+  "evidence": {
+    "book_committed_response_lost_retry_got_stored_answer": {
+      "kill": 0,
+      "other": 0
+    },
+    "book_rolled_back_retry_booked_fresh": {
+      "kill": 0,
+      "other": 0
+    },
+    "cancel_committed_response_lost": {
+      "kill": 0,
+      "other": 0
+    }
+  },
+  "risky_case_exercised": false,
+  "hard_limits": {
+    "duplicates": {
+      "keys_not_one_to_one": 0,
+      "double_holders": 0,
+      "pass": true
+    },
+    "false_successes": {
+      "count": 0,
+      "pass": true
+    },
+    "consistency": {
+      "sessions": [
+        {
+          "id": 1,
+          "capacity": 10,
+          "booked": 10,
+          "confirmed": 10
+        },
+        {
+          "id": 2,
+          "capacity": 10,
+          "booked": 9,
+          "confirmed": 9
+        },
+        {
+          "id": 3,
+          "capacity": 10,
+          "booked": 10,
+          "confirmed": 10
+        }
+      ],
+      "pass": true
+    }
+  },
+  "recorded": {
+    "operations": 3729,
+    "attempts": 3812,
+    "retries": 83,
+    "failed_attempts": 84,
+    "failed_attempts_after_kill": 84,
+    "detection_s": 1.94,
+    "errors_stopped_after_s": 1.93,
+    "rejoin_s": 3.03,
+    "outcome_unknown_to_client": 1,
+    "outcome_unknown_but_committed": 0,
+    "after_giving_up_checked_my_bookings": {
+      "checked": 1,
+      "check_failed": 0,
+      "matches_database": 1,
+      "differs_from_database": 0
+    },
+    "told_no_but_booked": 0,
+    "by_phase": {
+      "before": {
+        "attempts": 1238,
+        "failed": 0,
+        "p50_ms": 48.2,
+        "p95_ms": 120.8,
+        "answered_by": {
+          "a2": 619,
+          "a1": 619
+        }
+      },
+      "during": {
+        "attempts": 1307,
+        "failed": 84,
+        "p50_ms": 45.1,
+        "p95_ms": 103.3,
+        "answered_by": {
+          "a2": 1223
+        }
+      },
+      "after": {
+        "attempts": 1267,
+        "failed": 0,
+        "p50_ms": 48.0,
+        "p95_ms": 115.3,
+        "answered_by": {
+          "a2": 729,
+          "a1": 538
+        }
+      }
+    }
+  },
+  "result": "INCONCLUSIVE"
+}
