@@ -1,0 +1,25 @@
+{
+  "key": "0863929b-08ca-42b4-ab47-1dc638554c6e",
+  "session_id": 4,
+  "attempts": [
+    {
+      "url": "http://127.0.0.1:8001",
+      "status": null,
+      "error": "RemoteProtocolError",
+      "sent": 1792759097.002249,
+      "finished": 1792759097.513648
+    },
+    {
+      "url": "http://127.0.0.1:8080",
+      "status": 201,
+      "body": {
+        "booking_id": 306,
+        "session_id": 4,
+        "status": "confirmed"
+      },
+      "instance": "a2",
+      "sent": 1792759097.513661,
+      "finished": 1792759099.5423958
+    }
+  ]
+}

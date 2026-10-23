@@ -1,0 +1,131 @@
+{
+  "label": "Local experiment on one machine, not proof of AWS high availability",
+  "mode": "after-commit",
+  "evidence": {
+    "book_committed_response_lost_retry_got_stored_answer": {
+      "kill": 0,
+      "other": 0
+    },
+    "book_rolled_back_retry_booked_fresh": {
+      "kill": 0,
+      "other": 0
+    },
+    "cancel_committed_response_lost": {
+      "kill": 0,
+      "other": 0
+    }
+  },
+  "risky_case_exercised": true,
+  "victim": {
+    "first_attempt": {
+      "url": "http://127.0.0.1:8001",
+      "status": null,
+      "error": "RemoteProtocolError"
+    },
+    "attempts": 2,
+    "final": {
+      "url": "http://127.0.0.1:8080",
+      "status": 200,
+      "body": {
+        "status": "confirmed",
+        "booking_id": 274,
+        "session_id": 4
+      },
+      "instance": "a2"
+    },
+    "expected_final_status": 200,
+    "victim_bookings_in_database": 1,
+    "pass": true
+  },
+  "hard_limits": {
+    "duplicates": {
+      "keys_not_one_to_one": 0,
+      "double_holders": 0,
+      "pass": true
+    },
+    "false_successes": {
+      "count": 0,
+      "pass": true
+    },
+    "consistency": {
+      "sessions": [
+        {
+          "id": 1,
+          "capacity": 10,
+          "booked": 10,
+          "confirmed": 10
+        },
+        {
+          "id": 2,
+          "capacity": 10,
+          "booked": 9,
+          "confirmed": 9
+        },
+        {
+          "id": 3,
+          "capacity": 10,
+          "booked": 10,
+          "confirmed": 10
+        },
+        {
+          "id": 4,
+          "capacity": 10,
+          "booked": 1,
+          "confirmed": 1
+        }
+      ],
+      "pass": true
+    }
+  },
+  "recorded": {
+    "operations": 4085,
+    "attempts": 4174,
+    "retries": 89,
+    "failed_attempts": 89,
+    "failed_attempts_after_kill": 89,
+    "detection_s": 1.95,
+    "errors_stopped_after_s": 1.95,
+    "rejoin_s": 2.05,
+    "outcome_unknown_to_client": 0,
+    "outcome_unknown_but_committed": 0,
+    "after_giving_up_checked_my_bookings": {
+      "checked": 0,
+      "check_failed": 0,
+      "matches_database": 0,
+      "differs_from_database": 0
+    },
+    "told_no_but_booked": 0,
+    "by_phase": {
+      "before": {
+        "attempts": 1360,
+        "failed": 0,
+        "p50_ms": 13.0,
+        "p95_ms": 23.8,
+        "answered_by": {
+          "a2": 680,
+          "a1": 680
+        }
+      },
+      "during": {
+        "attempts": 1403,
+        "failed": 89,
+        "p50_ms": 13.2,
+        "p95_ms": 21.4,
+        "answered_by": {
+          "a2": 1314
+        }
+      },
+      "after": {
+        "attempts": 1411,
+        "failed": 0,
+        "p50_ms": 12.6,
+        "p95_ms": 19.4,
+        "answered_by": {
+          "a2": 779,
+          "a1": 632
+        }
+      }
+    }
+  },
+  "result": "PASS"
+}

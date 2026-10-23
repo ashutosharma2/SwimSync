@@ -110,9 +110,11 @@ def main():
     parser.add_argument("--swimmers", type=int, default=30)
     parser.add_argument("--duration", type=float, default=60)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--session-prefix", default="", help="only use sessions whose name starts with this")
     args = parser.parse_args()
 
-    sessions = [s["id"] for s in httpx.get(f"{args.url}/sessions", timeout=5).json()]
+    sessions = [s["id"] for s in httpx.get(f"{args.url}/sessions", timeout=5).json()
+                if s["name"].startswith(args.session_prefix)]
     recorder = Recorder(args.out)
     deadline = time.time() + args.duration
     threads = [

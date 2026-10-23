@@ -9,10 +9,11 @@ Hard limits (any breach fails the drill), set before the first run:
 
 Everything else is recorded with no pass mark.
 
-Evidence rule: in the after-commit and before-commit modes, a run that passes the hard limits is
-INCONCLUSIVE unless it shows the risky case actually happened:
-  after-commit   at least one request was cut off after its commit and the retry got the stored answer
-  before-commit  at least one request was cut off before its commit and the retry booked fresh
+Victim rule (before-commit and after-commit modes): the drill's victim request is sent to a1 and a1 is
+killed while the request is held. The run is INCONCLUSIVE if the victim's first attempt wasn't cut off,
+and FAILS unless the victim ends with exactly one confirmed booking and its retry got:
+  before-commit  201: the held booking rolled back, so the retry booked fresh
+  after-commit   200: the held booking was saved, so the retry got the stored answer
 
 Run (normally via run.py): python drills/a/analyse.py drills/results/a-<timestamp> --db postgresql:///swimsync_drill
 """
@@ -152,11 +153,25 @@ def main():
         "book_rolled_back_retry_booked_fresh": cuts["before_commit"],
         "cancel_committed_response_lost": cancel_lost,
     }
-    exercised = {
-        "plain": True,
-        "after-commit": cuts["after_commit"]["kill"] + cancel_lost["kill"] > 0,
-        "before-commit": cuts["before_commit"]["kill"] > 0,
-    }[mode]
+    victim_path = out / "victim.json"
+    victim = None
+    exercised, victim_ok = True, True
+    if mode != "plain":
+        record = json.loads(victim_path.read_text())
+        first, last = record["attempts"][0], record["attempts"][-1]
+        rows = [b for b in bookings.values() if b["swimmer_id"] == "drill-victim"]
+        expected = 201 if mode == "before-commit" else 200
+        exercised = first["status"] is None  # cut off by the kill, as intended
+        victim_ok = (last["status"] == expected and len(rows) == 1 and rows[0]["status"] == "confirmed"
+                     and rows[0]["id"] == (last.get("body") or {}).get("booking_id"))
+        victim = {
+            "first_attempt": {k: first.get(k) for k in ("url", "status", "error")},
+            "attempts": len(record["attempts"]),
+            "final": {k: last.get(k) for k in ("url", "status", "body", "instance")},
+            "expected_final_status": expected,
+            "victim_bookings_in_database": len(rows),
+            "pass": victim_ok,
+        }
 
     inconsistent = [s for s in sessions if s["booked"] != s["confirmed"] or s["confirmed"] > s["capacity"]]
 
@@ -185,6 +200,7 @@ def main():
         "mode": mode,
         "evidence": evidence,
         "risky_case_exercised": exercised,
+        "victim": victim,
         "hard_limits": {
             "duplicates": {"keys_not_one_to_one": len(key_per_booking), "double_holders": len(double_holders),
                            "pass": not key_per_booking and not double_holders},
@@ -208,12 +224,15 @@ def main():
         },
     }
     passed = all(v["pass"] for v in summary["hard_limits"].values())
+    passed = passed and (victim_ok or not exercised)
     summary["result"] = "FAIL" if not passed else "PASS" if exercised else "INCONCLUSIVE"
     (out / "summary.json").write_text(json.dumps(summary, indent=2))
 
     r = summary["recorded"]
     print(f"\nDrill A, mode {mode}: {summary['result']}  ({summary['label']})")
     print(f"  evidence: {evidence}")
+    if victim:
+        print(f"  victim: {victim}")
     for name, limit in summary["hard_limits"].items():
         print(f"  hard limit {name:16} {'pass' if limit['pass'] else 'FAIL'}")
     print(f"  operations {r['operations']}, attempts {r['attempts']}, retries {r['retries']}, "

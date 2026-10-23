@@ -272,6 +272,8 @@ The worker claims a row with `FOR NO KEY UPDATE SKIP LOCKED`. `SKIP LOCKED` lets
 
 Local experiment, not proof of AWS high availability. `drills/a/run.py` runs 30 fictional swimmers for 60 seconds, kills `a1` with `kill -9` at 20 seconds and restarts it at 40. HAProxy doesn't retry on its own (`retries 0`); the load script retries with the same idempotency key.
 
+Two modes aim the kill at a known point. A single "victim" request (swimmer `drill-victim`, on its own session) goes straight to `a1` and is held there for 2 seconds, either before its commit (`--mode before-commit`) or after it (`--mode after-commit`). `a1` is killed half a second into that hold. Only the victim is delayed, so the load swimmers aren't slowed down. The victim then retries through HAProxy with the same key: before the commit, the booking rolled back, so the retry books fresh (201); after the commit, the booking was saved, so the retry gets the stored answer (200). Either way the database must end with exactly one victim booking.
+
 ```mermaid
 flowchart LR
     Load["drills/a/load.py<br/>30 swimmers, same-key retries"]
