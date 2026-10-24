@@ -11,6 +11,7 @@ import time
 import uuid
 from typing import Annotated
 
+import psycopg
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
 from psycopg.errors import UniqueViolation
@@ -39,6 +40,62 @@ def drill_pause(swimmer_id, seconds):
 
 app = FastAPI(title="SwimSync")
 
+log = logging.getLogger("swimsync.api")
+
+OUTCOME_UNKNOWN = {
+    "error": "outcome_unknown",
+    "detail": "The database connection broke while saving, so it isn't known whether the change was saved. "
+              "Retry with the same request (and the same Idempotency-Key), or check /me/bookings.",
+}
+
+
+def unavailable(**unchanged):
+    return 503, {"error": "database_unavailable", **unchanged}
+
+
+def run_change(work, swimmer_id, unchanged):
+    """Run one booking change in a transaction, commit explicitly, and answer honestly on failure.
+
+    A failure before the commit means PostgreSQL rolls the transaction back, so nothing changed and
+    the answer says so. A failure during the commit means the change may or may not have been saved,
+    so the answer is "outcome unknown": never yes, never no.
+    """
+    try:
+        conn = db.connect()
+    except psycopg.OperationalError as exc:
+        log.warning("database unavailable before the transaction: %r", exc)
+        return unavailable(**unchanged)
+    try:
+        try:
+            status, body = work(conn)
+            drill_pause(swimmer_id, DELAY_BEFORE_COMMIT)  # inside the transaction, holding the lock
+        except psycopg.OperationalError as exc:  # includes statement and lock timeouts
+            log.warning("database failure before commit, rolled back: %r", exc)
+            return unavailable(**unchanged)
+        try:
+            conn.commit()
+        except psycopg.OperationalError as exc:
+            log.error("commit outcome unknown: %r", exc)
+            return 503, OUTCOME_UNKNOWN
+    finally:
+        conn.close()  # without a commit, closing rolls the transaction back
+    drill_pause(swimmer_id, DELAY_AFTER_COMMIT)  # committed, but the swimmer hasn't been told yet
+    return status, body
+
+
+def answer(status, body):
+    headers = {"Retry-After": "1"} if status == 503 else None
+    return JSONResponse(status_code=status, content=body, headers=headers)
+
+
+def read(work):
+    try:
+        with db.connect() as conn:
+            return work(conn)
+    except psycopg.OperationalError as exc:
+        log.warning("database unavailable for a read: %r", exc)
+        return answer(*unavailable())
+
 
 @app.middleware("http")
 async def tag_instance(request, call_next):
@@ -61,42 +118,38 @@ IdempotencyKey = Annotated[uuid.UUID, Header(alias="Idempotency-Key")]
 
 @app.get("/sessions")
 def list_sessions():
-    with db.connect() as conn:
-        return booking.list_sessions(conn)
+    return read(booking.list_sessions)
 
 
 @app.post("/sessions/{session_id}/bookings")
 def create_booking(session_id: int, swimmer_id: SwimmerId, idempotency_key: IdempotencyKey):
     try:
-        with db.connect() as conn:
-            status, body = booking.book(conn, session_id, swimmer_id, str(idempotency_key))
-            drill_pause(swimmer_id, DELAY_BEFORE_COMMIT)  # still inside the transaction, holding the session lock
+        status, body = run_change(
+            lambda conn: booking.book(conn, session_id, swimmer_id, str(idempotency_key)),
+            swimmer_id, {"booked": False},
+        )
     except UniqueViolation:
         # Only reachable when the same key is used for two different sessions at the same moment.
         # The transaction rolled back, so nothing was booked.
         status, body = 409, {"error": "a conflicting request with the same Idempotency-Key is in progress"}
-    # Leaving the `with` block committed the transaction, so a 201 is only sent once the booking is saved.
-    drill_pause(swimmer_id, DELAY_AFTER_COMMIT)  # committed, but the swimmer hasn't been told yet
-    return JSONResponse(status_code=status, content=body)
+    # A 201 is only sent after conn.commit() succeeded, so the booking is saved.
+    return answer(status, body)
 
 
 @app.post("/bookings/{booking_id}/cancel")
 def cancel_booking(booking_id: int, swimmer_id: SwimmerId):
-    with db.connect() as conn:
-        status, body = booking.cancel(conn, booking_id, swimmer_id)
-        drill_pause(swimmer_id, DELAY_BEFORE_COMMIT)
-    drill_pause(swimmer_id, DELAY_AFTER_COMMIT)
-    return JSONResponse(status_code=status, content=body)
+    status, body = run_change(
+        lambda conn: booking.cancel(conn, booking_id, swimmer_id), swimmer_id, {"cancelled": False}
+    )
+    return answer(status, body)
 
 
 @app.get("/me/bookings")
 def my_bookings(swimmer_id: SwimmerId):
     # The authoritative booking status. Notifications below are only messages about it.
-    with db.connect() as conn:
-        return booking.my_bookings(conn, swimmer_id)
+    return read(lambda conn: booking.my_bookings(conn, swimmer_id))
 
 
 @app.get("/me/notifications")
 def my_notifications(swimmer_id: SwimmerId):
-    with db.connect() as conn:
-        return booking.my_notifications(conn, swimmer_id)
+    return read(lambda conn: booking.my_notifications(conn, swimmer_id))
