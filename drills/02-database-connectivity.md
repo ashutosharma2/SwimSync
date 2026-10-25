@@ -20,7 +20,11 @@ Recorded, with no pass mark: outcomes and latency per phase, time to the first a
 
 ## Predicted symptom
 
-<!-- What you expect the swimmer, the load balancer and the logs to show. -->
+- Down: fast `503 database_unavailable` answers with `booked: false`, most operations give up within the 10 s, and the first request after the proxy returns succeeds almost at once. The outbox backs off and catches up after recovery.
+- Slow: `statement_timeout` doesn't fire, because the database runs each statement quickly and the delay is on the network. A booking takes about 8 to 9 s while holding the session lock, other bookings for that session hit `lock_timeout`, clients give up at 2 s, and some bookings commit after their swimmer stopped waiting. Requests back up for a few seconds after the phase ends. No duplicates, no false successes.
+- Victim: `503 outcome_unknown` first, then `200` with the same booking on retry.
+
+<!-- Note: agreed after reasoning it through with help, before the run, so not an independent prediction. -->
 
 ## Evidence
 

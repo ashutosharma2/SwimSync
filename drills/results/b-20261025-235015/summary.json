@@ -1,0 +1,141 @@
+{
+  "label": "Local experiment on one machine, not proof of how a cloud database would behave",
+  "result": "PASS",
+  "hard_limits": {
+    "duplicates": {
+      "keys_not_one_to_one": 0,
+      "double_holders": 0,
+      "pass": true
+    },
+    "false_successes": {
+      "count": 0,
+      "pass": true
+    },
+    "consistency": {
+      "sessions": [
+        {
+          "id": 1,
+          "capacity": 10,
+          "booked": 10,
+          "confirmed": 10
+        },
+        {
+          "id": 2,
+          "capacity": 10,
+          "booked": 10,
+          "confirmed": 10
+        },
+        {
+          "id": 3,
+          "capacity": 10,
+          "booked": 9,
+          "confirmed": 9
+        },
+        {
+          "id": 4,
+          "capacity": 10,
+          "booked": 1,
+          "confirmed": 1
+        }
+      ],
+      "pass": true
+    },
+    "no_false_not_booked": {
+      "count": 0,
+      "pass": true
+    },
+    "outbox_matches_changes": {
+      "mismatched_bookings": [],
+      "pass": true
+    }
+  },
+  "victim": {
+    "first": {
+      "status": 503,
+      "body": {
+        "error": "outcome_unknown",
+        "detail": "The database connection broke while saving, so it isn't known whether the change was saved. Retry with the same request (and the same Idempotency-Key), or check /me/bookings."
+      },
+      "error": null
+    },
+    "last": {
+      "status": 200,
+      "body": {
+        "status": "confirmed",
+        "booking_id": 252,
+        "session_id": 4
+      },
+      "error": null
+    },
+    "attempts": 2,
+    "victim_bookings_in_database": 1,
+    "ambiguous_commit_happened": true,
+    "pass": true
+  },
+  "recorded": {
+    "operations": 3173,
+    "attempts": 4205,
+    "first_answer_after_down_ends_s": 0.06,
+    "first_answer_after_slow_ends_s": 0.03,
+    "outcome_unknown_to_client": 173,
+    "outbox_by_status_at_end": {
+      "pending": 258,
+      "delivered": 282
+    },
+    "outbox_settle_s_after_load": 45.3,
+    "by_phase": {
+      "normal before": {
+        "attempts": 693,
+        "outcomes": {
+          "answered": 693
+        },
+        "answered_p50_ms": 11.6,
+        "answered_p95_ms": 55.6,
+        "failed_p50_ms": null,
+        "failed_max_ms": null
+      },
+      "down": {
+        "attempts": 1086,
+        "outcomes": {
+          "database_unavailable": 1084,
+          "outcome_unknown": 2
+        },
+        "answered_p50_ms": null,
+        "answered_p95_ms": null,
+        "failed_p50_ms": 4.3,
+        "failed_max_ms": 401.9
+      },
+      "between": {
+        "attempts": 758,
+        "outcomes": {
+          "answered": 758
+        },
+        "answered_p50_ms": 14.9,
+        "answered_p95_ms": 80.3,
+        "failed_p50_ms": null,
+        "failed_max_ms": null
+      },
+      "slow": {
+        "attempts": 120,
+        "outcomes": {
+          "answered": 1,
+          "ReadTimeout": 119
+        },
+        "answered_p50_ms": 1011.3,
+        "answered_p95_ms": 1011.3,
+        "failed_p50_ms": 2002.2,
+        "failed_max_ms": 2010.0
+      },
+      "after": {
+        "attempts": 1548,
+        "outcomes": {
+          "answered": 1548
+        },
+        "answered_p50_ms": 14.6,
+        "answered_p95_ms": 59.1,
+        "failed_p50_ms": null,
+        "failed_max_ms": null
+      }
+    }
+  }
+}

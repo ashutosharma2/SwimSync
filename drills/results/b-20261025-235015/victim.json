@@ -1,0 +1,25 @@
+{
+  "key": "59d5dde6-e4b8-4dbb-b494-4870fd10e2a7",
+  "session_id": 4,
+  "attempts": [
+    {
+      "status": 503,
+      "body": {
+        "error": "outcome_unknown",
+        "detail": "The database connection broke while saving, so it isn't known whether the change was saved. Retry with the same request (and the same Idempotency-Key), or check /me/bookings."
+      },
+      "sent": 1792952467.135233,
+      "finished": 1792952472.176163
+    },
+    {
+      "status": 200,
+      "body": {
+        "status": "confirmed",
+        "booking_id": 252,
+        "session_id": 4
+      },
+      "sent": 1792952472.1761768,
+      "finished": 1792952474.199438
+    }
+  ]
+}

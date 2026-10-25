@@ -1,0 +1,2 @@
+DRILL DELAYS ON (instance victim-api) for swimmer drill-victim only: 2000 ms before commit, 0 ms after commit
+commit outcome unknown: OperationalError('consuming input failed: server closed the connection unexpectedly\n\tThis probably means the server terminated abnormally\n\tbefore or while processing the request.')
