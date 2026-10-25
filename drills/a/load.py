@@ -46,8 +46,12 @@ def attempt(client, recorder, op, key, swimmer, method, path, headers):
             error = None
         except httpx.HTTPError as exc:
             status, instance, body, error = None, None, None, type(exc).__name__
+        # For server errors, keep what the server said: "database_unavailable" (with booked/cancelled
+        # false) or "outcome_unknown". Drill B checks those answers against the database.
+        said = body if status is not None and status >= 500 and isinstance(body, dict) else {}
         recorder.write(type="attempt", op=op, key=key, swimmer=swimmer, attempt=number, status=status,
-                       error=error, instance=instance, latency_ms=round((time.time() - started) * 1000, 1))
+                       error=error, instance=instance, latency_ms=round((time.time() - started) * 1000, 1),
+                       answer=said.get("error"), booked=said.get("booked"))
         if status in FINAL_STATUSES:
             return status, body
         time.sleep(RETRY_DELAY)
