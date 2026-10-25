@@ -7,6 +7,8 @@ second delivery, which the inbox's unique outbox_id turns into a no-op.
 import logging
 import time
 
+import psycopg
+
 from . import db
 
 log = logging.getLogger("swimsync.outbox")
@@ -73,7 +75,35 @@ def deliver_due(adapter, limit=100):
     return handled
 
 
-def run_forever(adapter, poll_seconds=1.0):
-    while True:
-        if deliver_due(adapter) == 0:
-            time.sleep(poll_seconds)
+DB_RETRY_MAX_SECONDS = 30
+
+
+def run_forever(adapter, poll_seconds=1.0, stop=None):
+    """Deliver notifications until `stop` (a threading.Event) is set, surviving database outages.
+
+    A database error (unreachable, timed out) is not the notification's fault, so it doesn't count
+    against the row's attempts: the row stays pending and is retried once the database is back.
+    Drill B found that without this, the first outage killed the worker for good.
+    """
+    db_failures = 0
+    while stop is None or not stop.is_set():
+        try:
+            handled = deliver_due(adapter)
+        except psycopg.OperationalError as exc:
+            db_failures += 1
+            wait = min(2 ** (db_failures - 1), DB_RETRY_MAX_SECONDS)
+            log.warning("database unavailable, retrying in %ss (failure %s): %r", wait, db_failures, exc)
+            _wait(wait, stop)
+            continue
+        if db_failures:
+            log.info("database back after %s failures", db_failures)
+            db_failures = 0
+        if handled == 0:
+            _wait(poll_seconds, stop)
+
+
+def _wait(seconds, stop):
+    if stop is None:
+        time.sleep(seconds)
+    else:
+        stop.wait(seconds)

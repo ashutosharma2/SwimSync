@@ -1,6 +1,7 @@
 """Notifications: the outbox, the worker and the inbox (invariants 9 and 10)."""
 
 import threading
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -192,3 +193,42 @@ def test_four_workers_deliver_each_notification_once():
     rows = outbox_rows()
     assert {(r["status"], r["attempts"]) for r in rows} == {("delivered", 1)}
     assert len(inbox_rows()) == 20
+
+
+# Drill B found the worker died on its first database error. It must survive an outage instead.
+
+def test_worker_survives_a_database_outage(monkeypatch):
+    import psycopg
+
+    session = make_session(capacity=5)
+    book(session, "alice")
+    real_connect, calls = db.connect, {"n": 0}
+
+    def down_then_up():
+        calls["n"] += 1
+        if calls["n"] <= 3:
+            raise psycopg.OperationalError("simulated: database unreachable")
+        return real_connect()
+
+    monkeypatch.setattr(db, "connect", down_then_up)
+    monkeypatch.setattr(outbox, "_wait", lambda seconds, stop: stop.wait(0.01))  # skip the real backoff
+    stop = threading.Event()
+    worker = threading.Thread(target=outbox.run_forever, args=(InAppAdapter(failing=False),), kwargs={"stop": stop})
+    worker.start()
+    try:
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            with real_connect() as conn:  # poll on a real connection, not the failing one
+                if conn.execute("SELECT count(*) AS n FROM notifications").fetchone()["n"]:
+                    break
+            time.sleep(0.05)
+    finally:
+        stop.set()
+        worker.join(timeout=5)
+        monkeypatch.undo()
+
+    assert not worker.is_alive()
+    assert calls["n"] > 3  # it kept trying after the failures
+    row = outbox_rows()[0]
+    assert (row["status"], row["attempts"]) == ("delivered", 1)  # the outage didn't use up attempts
+    assert len(inbox_rows()) == 1
