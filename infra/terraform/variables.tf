@@ -46,3 +46,40 @@ variable "enable_ec2messages_endpoint" {
   type        = bool
   default     = false
 }
+
+# Step 2: load balancer, instances, database.
+
+variable "app_ami_id" {
+  description = "Machine image for the app instances, with the API, the outbox worker and their dependencies already installed (the app subnets have no internet route, so nothing can be downloaded at boot). Required: there is no safe default."
+  type        = string
+}
+
+variable "app_instance_type" {
+  description = "Instance type for the two app instances. Must match the image's architecture (t4g is ARM)."
+  type        = string
+  default     = "t4g.micro"
+}
+
+variable "db_engine_version" {
+  description = "RDS PostgreSQL major version. Check which versions RDS offers in the region before any plan."
+  type        = string
+  default     = "17"
+}
+
+variable "db_instance_class" {
+  description = "RDS instance class."
+  type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "db_multi_az" {
+  description = "Keep a standby database in the second zone. Off by default for cost (goal 5): the database is then a known single point of failure if its zone fails."
+  type        = bool
+  default     = false
+}
+
+variable "db_backup_retention_days" {
+  description = "Days of automated backups."
+  type        = number
+  default     = 1
+}

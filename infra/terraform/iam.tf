@@ -25,3 +25,17 @@ resource "aws_iam_instance_profile" "app" {
   name = "swimsync-app"
   role = aws_iam_role.app.name
 }
+
+# Read access to exactly one secret: the database password RDS manages.
+data "aws_iam_policy_document" "read_db_secret" {
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_db_instance.main.master_user_secret[0].secret_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "app_read_db_secret" {
+  name   = "read-db-secret"
+  role   = aws_iam_role.app.id
+  policy = data.aws_iam_policy_document.read_db_secret.json
+}

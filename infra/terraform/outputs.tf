@@ -23,3 +23,17 @@ output "security_group_ids" {
 output "app_instance_profile" {
   value = aws_iam_instance_profile.app.name
 }
+
+output "alb_dns_name" {
+  description = "The public address of the app (HTTP)."
+  value       = aws_lb.main.dns_name
+}
+
+output "db_address" {
+  value = aws_db_instance.main.address
+}
+
+output "db_secret_arn" {
+  description = "Where the database password lives. The ARN is not the password."
+  value       = aws_db_instance.main.master_user_secret[0].secret_arn
+}

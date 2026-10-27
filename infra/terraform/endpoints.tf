@@ -4,7 +4,8 @@
 # app and its dependencies are baked into the machine image.
 
 locals {
-  interface_endpoints = concat(["ssm", "ssmmessages"], var.enable_ec2messages_endpoint ? ["ec2messages"] : [])
+  # secretsmanager: the app reads the database password, which RDS keeps in Secrets Manager.
+  interface_endpoints = concat(["ssm", "ssmmessages", "secretsmanager"], var.enable_ec2messages_endpoint ? ["ec2messages"] : [])
   app_subnet_ids      = [for key, s in local.subnets : aws_subnet.this[key].id if s.tier == "app"]
 }
 
