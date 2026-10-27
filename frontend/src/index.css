@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@theme {
+  --color-water: #3b8fd9;
+  --color-water-soft: #dcecfa;
+  --color-deep: #0c447c;
+}
+
+/* The button's ripple when a booking is confirmed. Played only after the server says yes. */
+@keyframes ripple {
+  0% { box-shadow: 0 0 0 0 rgb(59 143 217 / 0.5); }
+  100% { box-shadow: 0 0 0 14px rgb(59 143 217 / 0); }
+}
+.ripple { animation: ripple 0.7s ease-out; }
+
+/* A calm pulse while the outcome is unknown and the app is checking. */
+@keyframes calm { 50% { opacity: 0.55; } }
+.checking { animation: calm 1.4s ease-in-out infinite; }
