@@ -23,7 +23,9 @@
 11. [Drill A: instance failure](#11-drill-a-instance-failure)
 12. [Drill B: database connectivity (planned)](#12-drill-b-database-connectivity-planned)
 13. [Trust boundaries](#13-trust-boundaries)
-14. [AWS infrastructure (not designed yet)](#14-aws-infrastructure-not-designed-yet)
+14. [AWS infrastructure (designed, never deployed)](#14-aws-infrastructure-designed-never-deployed)
+15. [AWS security groups](#15-aws-security-groups)
+16. [Admin access and the database password](#16-admin-access-and-the-database-password)
 
 ---
 
@@ -360,6 +362,108 @@ flowchart LR
 
 What the server never takes from the client: whether there's room, the booking's status, or the counter. The database enforces the last line of defence itself: `CHECK (booked <= capacity)`, the unique confirmed-booking index and the unique inbox `outbox_id`.
 
-## 14. AWS infrastructure (not designed yet)
+## 14. AWS infrastructure (designed, never deployed)
 
-There's no diagram here on purpose. The VPC, subnets, load balancer, database and admin access are still to be designed, and the account's Paid plan means nothing is deployed by default (₹0 rule). A proposal exists in [the research notes](research/initial-research.md) (section 11), but it's a proposal, not a decision, so it isn't drawn as part of the architecture.
+The AWS version of the local system, as written in `infra/terraform/` and checked with `terraform validate`. It has never been planned or applied: the account is on the Paid plan, so the ₹0 budget comes from not deploying it. Everything in this section is drawn dashed for that reason.
+
+The region is `ap-south-1`, with one subnet of each tier in each of two zones (a and b). The mapping from what's been drilled locally: the ALB plays HAProxy, and the two app instances in two zones play `a1` and `a2`. Only the ALB can be reached from the internet. The app subnets have no internet route at all, and the database subnets only route inside the VPC.
+
+```mermaid
+flowchart TB
+    Internet(["Internet"])
+
+    subgraph VPC["VPC 10.20.0.0/16"]
+        IGW["Internet Gateway"]
+
+        subgraph Public["Public subnets"]
+            direction LR
+            PubA["zone a: 10.20.0.0/24<br/>ALB node"]
+            PubB["zone b: 10.20.1.0/24<br/>ALB node"]
+        end
+
+        subgraph App["Private app subnets"]
+            direction LR
+            AppA["zone a: 10.20.10.0/24<br/>app instance 0<br/>API + outbox worker"]
+            AppB["zone b: 10.20.11.0/24<br/>app instance 1<br/>API + outbox worker"]
+        end
+
+        subgraph Data["Private DB subnets"]
+            direction LR
+            DbA["zone a: 10.20.20.0/24<br/>RDS PostgreSQL<br/>(single zone by default)"]
+            DbB["zone b: 10.20.21.0/24<br/>standby only if db_multi_az"]
+        end
+
+        Endpoints["Interface endpoints<br/>ssm, ssmmessages, secretsmanager<br/>(one interface per app subnet)"]
+        S3GW["S3 gateway endpoint<br/>(no charge)"]
+    end
+
+    Internet -. "HTTP :80" .-> IGW
+    IGW -.-> Public
+    Public -. ":8000 to both instances" .-> App
+    App -. ":5432" .-> DbA
+    DbA -. "replica only if db_multi_az" .- DbB
+    App -. ":443" .-> Endpoints
+    App -.-> S3GW
+
+    class IGW,PubA,PubB,AppA,AppB,DbA,DbB,Endpoints,S3GW planned
+    classDef planned stroke-dasharray: 5 5
+```
+
+| Route table | Subnets | Routes |
+|---|---|---|
+| public | 10.20.0.0/24, 10.20.1.0/24 | local, and `0.0.0.0/0` to the Internet Gateway (the only internet route in the VPC) |
+| app | 10.20.10.0/24, 10.20.11.0/24 | local, and S3 through the gateway endpoint |
+| db | 10.20.20.0/24, 10.20.21.0/24 | local only, permanently |
+
+What survives what: losing an app instance or a whole zone leaves the other app instance serving through the ALB, which is drill A at cloud scale. Losing the database's zone takes the database down unless `db_multi_az` is switched on, which roughly doubles the database's cost. That trade-off is deliberate and is listed as a known single point of failure.
+
+## 15. AWS security groups
+
+Each tier accepts traffic only from the tier in front of it, and the rules name security groups, not IP addresses, so they keep working when instances are replaced. Terraform removes AWS's default "allow all outbound" rule, so the arrows below are the only traffic allowed. There's no port 22 anywhere.
+
+```mermaid
+flowchart LR
+    Internet(["Internet"])
+    ALB["sg alb"]
+    App["sg app"]
+    DB["sg db<br/>no outbound rules"]
+    EP["sg endpoints"]
+    S3["S3 prefix list"]
+
+    Internet -. "80 in" .-> ALB
+    ALB -. "8000" .-> App
+    App -. "5432" .-> DB
+    App -. "443" .-> EP
+    App -. "443" .-> S3
+
+    class ALB,App,DB,EP planned
+    classDef planned stroke-dasharray: 5 5
+```
+
+HTTP only on the ALB: HTTPS needs a certificate, a certificate needs a domain, and a domain costs money. It's a production requirement, not part of the ₹0 design.
+
+## 16. Admin access and the database password
+
+Nothing connects in to an app instance. SSM Agent on each instance connects out, through the interface endpoints, to Session Manager, and an operator's shell travels back over that connection. The database password is created by RDS and kept in Secrets Manager; Terraform only ever sees its ARN, and the instance role may read that one secret and nothing else.
+
+```mermaid
+sequenceDiagram
+    participant Op as Operator (AWS console or CLI)
+    participant SSM as Session Manager (AWS service)
+    participant EP as Interface endpoints (in the VPC)
+    participant App as App instance (private, no public IP)
+    participant SM as Secrets Manager
+    participant DB as RDS
+
+    App->>EP: SSM Agent connects out on 443
+    EP->>SSM: registered, waiting for sessions
+    Op->>SSM: start session (IAM-authorised)
+    SSM-->>App: shell over the agent's outbound channel
+    Note over App: no port 22, no SSH key, no bastion
+    App->>EP: at start-up: GetSecretValue (one ARN only)
+    EP->>SM: request
+    SM-->>App: database password (planned: the app reads DATABASE_URL today)
+    App->>DB: connect on 5432
+```
+
+Instances also require IMDSv2 (`http_tokens = "required"`), so the instance metadata, including the role's temporary credentials, can only be read after a PUT for a session token.
