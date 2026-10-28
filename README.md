@@ -1,5 +1,7 @@
 # SwimSync
 
+[![Tests](https://github.com/ashutosharma2/SwimSync/actions/workflows/tests.yml/badge.svg)](https://github.com/ashutosharma2/SwimSync/actions/workflows/tests.yml)
+
 A booking system for swimming sessions that never confirms more places than a session has, releases a cancelled place exactly once, and never tells a swimmer "booked" or "not booked" without evidence.
 
 The full story of the project, including every real error I hit, is in [docs/project-story.md](docs/project-story.md). The architecture diagrams are in [docs/architecture.md](docs/architecture.md), and a one-line-per-day build log is in [LOG.md](LOG.md).
