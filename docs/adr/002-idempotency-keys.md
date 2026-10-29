@@ -1,56 +1,47 @@
-<!-- Skeleton. The comments are questions for you to answer; delete each one as you write. -->
-
 # ADR-002: Idempotency keys that store the first answer
 
-- Status: Proposed
-- Date: 2026-10-21 (commit 729800f)
+- Status: Accepted
+- Date: 2026-10-21
 
 ## Scenario
 
-<!--
-- A phone on poolside wifi sends Book, the reply is lost, and the app asks again. What must the second request get back?
--->
+A swimmer taps Book on a phone at the poolside. The request reaches the server, but the reply is lost, or the app stops waiting. The app has to ask again, and the second request must not book a second place or give a different answer.
 
 ## Obstacle
 
-<!--
-- Why isn't "one confirmed booking per swimmer per session" (the partial unique index) enough on its own?
-- What about a retry that arrives while the first request is still running, or after the session has filled?
--->
+- The partial unique index (one confirmed booking per swimmer per session) stops a second booking, but on its own a retry would get "you already have a booking", not the answer the first request earned.
+- It can't help when the first answer was something other than a booking, such as "full". A retry could then book a place that freed up later, which is a different decision from the one the swimmer saw.
+- A retry can arrive while the first request is still running.
 
 ## Action
 
-<!--
-- What is stored with the key, and why does a replay return 200 with the same booking instead of a new 201?
-- Why does a "full" answer stay full on retry, even if a place frees up later?
-- Who creates the key (the app, once per tap) and where is it kept?
--->
+Every booking request carries an `Idempotency-Key` header: a UUID the app creates once per tap ([ADR-005](005-no-answer-without-evidence.md)).
+
+Inside the booking transaction, after locking the session row ([ADR-001](001-session-row-lock.md)):
+
+1. Look up the key for this swimmer. If it exists, return the stored answer and change nothing. A stored 201 is replayed as 200 with the same body and booking id, so the app can tell a replay from a new booking.
+2. Otherwise decide as normal, then store the status and body under `(swimmer_id, key)` in the same transaction as the booking. The key and the booking are saved together or not at all.
+
+Because the decision happens under the session lock, ten simultaneous retries with one key queue up: the first decides, and the rest read its answer.
+
+A stored "full" stays "full", even if a place frees up later. The key names one attempt, and that attempt's answer was "full". Booking the freed place takes a new tap with a new key.
+
+A key reused for a different session gets a 422. If the same key arrives for two different sessions at the same moment, the second insert hits the primary key, its transaction rolls back and it gets a 409, with nothing booked.
+
+The partial unique index stays as a second guard: a double tap that sends two different keys still books once.
 
 Alternatives considered:
 
-<!--
-- **Deduplicate only by swimmer and session:** why not?
-- **Server-generated request ids:** why not?
-- **No automatic retries at all:** why not?
--->
+- **Deduplicate only by swimmer and session.** Simpler, but a retry can't get back the original answer, and a "full" retry could quietly turn into a booking.
+- **Server-generated request ids.** The app only learns the id from the reply, which is the thing that gets lost.
+- **No automatic retries.** Leaves the swimmer guessing after every lost reply, which is the problem SwimSync exists to solve.
 
 ## Result
 
-<!--
-- What do the tests prove? How long are keys kept, and is there a clean-up? Note any follow-up in BACKLOG.md.
--->
+- A retry with the same key returns the first booking, ten simultaneous retries book once, a "full" answer stays full after a place frees up, a key for another session is refused, and a double tap with two keys books once ([tests/test_booking.py](../../tests/test_booking.py), [tests/test_api.py](../../tests/test_api.py)).
+- Drill A's after-commit run: the booking committed, the instance died before replying, and the retry on the other instance got the stored answer, with exactly one booking ([ADR-011](011-local-fault-drills.md)).
+- Keys are never deleted, so the table grows by one row per booking request. A clean-up of old keys is a follow-up, not yet in BACKLOG.md.
 
 ## Troubleshooting
 
-<!--
-- Anything that went wrong while building it?
--->
-
-<!--
-Evidence to link:
-- backend/app/booking.py
-- db/schema.sql
-- tests/test_booking.py: test_retry_with_same_key_returns_the_first_booking, test_ten_simultaneous_retries_with_one_key_book_once, test_retry_of_a_full_answer_stays_full_even_after_a_place_frees_up, test_same_key_for_a_different_session_is_rejected, test_double_tap_with_two_keys_books_once
-- tests/test_api.py: test_booking_returns_201_then_200_on_retry
-- drills/a/load.py (retries with the same key)
--->
+- None while building it.

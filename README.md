@@ -19,7 +19,7 @@ To try it without installing anything, open [prototype/index.html](prototype/ind
 | 5. Infrastructure design | ✅ | Terraform for a two-zone AWS VPC, ALB, two instances and RDS; validated locally, never applied |
 | 6. Portfolio | ⏳ | Architecture diagrams and build log done; demo, project story and drill write-ups to finish |
 
-Architecture decision records will go in [docs/adr/](docs/adr/). None are written yet.
+The architecture decision records are in [docs/adr/](docs/adr/): one per non-obvious decision, each with the evidence behind it.
 
 ## Project summary
 

@@ -1,59 +1,46 @@
-<!-- Skeleton. The comments are questions for you to answer; delete each one as you write. -->
-
 # ADR-001: Lock the session row and keep a booked counter
 
-- Status: Proposed
-- Date: 2026-10-21 (commit 729800f)
+- Status: Accepted
+- Date: 2026-10-21
 
 ## Scenario
 
-<!--
-- What must be true when 20 or 30 swimmers ask for the last places at the same moment?
-- Which plausible cause from docs/research/incident.md does this guard against?
--->
+A swimming session has a fixed number of places. When several swimmers ask for the last places at once, at most `capacity` of them may be confirmed. Concurrency oversell is the first of the plausible causes behind [my incident](../research/incident.md) that software can prevent.
 
 ## Obstacle
 
-<!--
-- Why does "read the count, then insert" oversell without a lock? Describe the interleaving.
-- What would SERIALIZABLE isolation or an optimistic version check cost here: retries, error handling, swimmer experience?
--->
+The obvious code reads how many places are taken, checks there's room and inserts a booking. Two requests can both read "one place left" before either inserts, and both get confirmed. Nothing in the read stops the second request.
+
+The fix has to hold under real concurrency, be easy to explain, and not turn every busy moment into errors for swimmers.
 
 ## Action
 
-<!--
-- What happens inside the transaction: SELECT ... FOR UPDATE on the session row, the check, the insert, the counter update?
-- Why a booked column instead of COUNT(*) over bookings?
-- Why CHECK (booked >= 0 AND booked <= capacity) as a second line of defence, and what does a swimmer see if it ever fires?
--->
+Every booking, cancel and operator change runs in one transaction that starts by locking the session's row:
+
+1. `SELECT ... FROM sessions WHERE id = %s FOR UPDATE`. Every other change to the same session waits here until this transaction ends, so "is there room?" and "take a place" can't be split by another request.
+2. Check the swimmer's existing booking, whether the session is closed, and `booked < capacity`.
+3. Insert the booking and add one to `sessions.booked` in the same transaction.
+
+The session row keeps a `booked` counter instead of counting bookings each time. The counter lives on the row that is already locked, so the check reads one number that nobody else can change until commit.
+
+The table also has `CHECK (booked >= 0 AND booked <= capacity)`. If a bug ever skipped the lock, the database would refuse the write instead of overselling.
+
+The lock order is always the session row first, so booking, cancelling and capacity changes ([ADR-006](006-capacity-cuts-newest-first.md)) queue behind each other per session and can't deadlock.
 
 Alternatives considered:
 
-<!--
-- **SERIALIZABLE isolation with retries:** why not?
-- **Optimistic concurrency (a version column):** why not?
-- **Advisory locks:** why not?
-- **One queue per session:** why not?
--->
+- **SERIALIZABLE isolation.** Also correct, but conflicting transactions fail and have to be retried, so a busy session turns into errors and retry loops instead of a short queue.
+- **Optimistic concurrency (a version column).** The same retry problem under contention, which is exactly when a popular session fills.
+- **Advisory locks.** They work, but they're a convention every code path has to remember. A row lock comes with the row the booking changes.
+- **COUNT(\*) under the lock instead of a counter.** Correct, but it gets slower as bookings grow, and a CHECK constraint can't guard a count.
 
 ## Result
 
-<!--
-- What do the race tests prove, and what don't they (one database, one machine)?
-- What happens to lock waits under load? (See the lock timeout added in ef561a8.)
-- What did the demo show with the lock switched off: refused writes, never oversold?
--->
+- 20 swimmers racing for 1 place and 30 racing for 5 never oversell, and ten simultaneous cancels release a place once ([tests/test_booking.py](../../tests/test_booking.py)).
+- With the lock removed, both race tests failed in 3 out of 3 runs, and each time it was the CHECK constraint that rejected the oversell. The backstop works, but the swimmer gets an error instead of a clear "full", which is why the lock is the main defence.
+- Requests for one session wait for each other. A lock held too long times out after 500 ms instead of piling requests up ([ADR-004](004-two-kinds-of-503.md)).
+- The guarantee holds with any number of app instances (drill A ran two) because it lives in the one database.
 
 ## Troubleshooting
 
-<!--
-- Anything that went wrong while building it? "None" is a fine answer.
--->
-
-<!--
-Evidence to link:
-- backend/app/booking.py
-- db/schema.sql
-- tests/test_booking.py: test_twenty_swimmers_race_for_the_last_place, test_thirty_swimmers_race_for_five_places, test_database_rejects_a_counter_above_capacity
-- tests/test_db_failures.py: test_lock_held_too_long_times_out_quickly_and_rolls_back
--->
+- None while building it. The lock-removed runs were a deliberate check that the tests can fail, not a bug.

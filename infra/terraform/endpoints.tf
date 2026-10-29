@@ -1,7 +1,7 @@
 # How private app instances reach the AWS services they need without any route to the internet.
-# Chosen over a NAT gateway: Session Manager still works (goal 3), the instances get no internet path
-# at all, and the hourly cost if deployed is lower. Trade-off: no package downloads at boot, so the
-# app and its dependencies are baked into the machine image.
+# Chosen over a NAT gateway: Session Manager still works (goal 3) and the instances get no internet path
+# at all. The hourly cost is similar, not lower (docs/adr/009-vpc-endpoints-not-nat.md). Trade-off: no
+# package downloads at boot, so the app and its dependencies are baked into the machine image.
 
 locals {
   # secretsmanager: the app reads the database password, which RDS keeps in Secrets Manager.
