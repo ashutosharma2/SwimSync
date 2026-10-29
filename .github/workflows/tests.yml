@@ -65,6 +65,15 @@ jobs:
       - run: npm test
       - run: npx vite build
 
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # Builds the containers in compose.yaml, so a broken Dockerfile shows up on the push that
+      # broke it. Nothing is pushed anywhere and nothing is started.
+      - run: docker compose build
+
   terraform:
     runs-on: ubuntu-latest
     timeout-minutes: 10

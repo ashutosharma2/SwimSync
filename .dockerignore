@@ -1,0 +1,10 @@
+# An allowlist: only what the images need goes into the build context. Everything else, such as
+# local environments, git history, drill logs and notes, stays out of every image.
+*
+!backend
+!scripts
+!db
+!frontend
+frontend/node_modules
+frontend/dist
+**/__pycache__

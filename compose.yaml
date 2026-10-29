@@ -1,0 +1,79 @@
+# SwimSync in containers. Start: docker compose up --build, then open http://127.0.0.1:8088
+#
+# - Every start reseeds the database, so the sessions are always for tomorrow and old bookings go.
+# - Ports avoid the native setup (8001, 5173) and the drills (8080), so they can run side by side.
+# - Operator endpoints: export SWIMSYNC_OPERATOR_TOKEN before starting. Without it they refuse
+#   every request, exactly as in the native setup.
+# - Session times are made in SWIMSYNC_TZ (default Asia/Kolkata), because containers run in UTC.
+
+name: swimsync
+
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  image: swimsync-backend
+
+x-database: &database
+  DATABASE_URL: postgresql://swimsync@db:5432/swimsync
+
+services:
+  db:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: swimsync
+      POSTGRES_USER: swimsync
+      # No port is published, so only containers on this compose network can reach the database.
+      # It trusts them, which means no password has to exist anywhere.
+      POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swimsync -d swimsync"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  seed:
+    <<: *backend
+    command: ["python", "scripts/seed.py"]
+    environment:
+      <<: *database
+      TZ: ${SWIMSYNC_TZ:-Asia/Kolkata}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    environment:
+      <<: *database
+      SWIMSYNC_INSTANCE: docker
+      SWIMSYNC_OPERATOR_TOKEN: ${SWIMSYNC_OPERATOR_TOKEN:-}
+    ports:
+      - "127.0.0.1:8002:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *backend
+    command: ["python", "scripts/outbox_worker.py"]
+    environment: *database
+    restart: unless-stopped
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "127.0.0.1:8088:80"
+    depends_on:
+      api:
+        condition: service_healthy
