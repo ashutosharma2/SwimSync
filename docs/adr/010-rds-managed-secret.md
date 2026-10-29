@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-27
+- Written: 2026-10-29
 
 ## Scenario
 
