@@ -1,7 +1,7 @@
--- SwimSync schema, MVP steps 1 and 2.
+-- SwimSync schema: bookings, notifications and operator capacity changes.
 -- Applying this file resets the database: it drops every SwimSync table first. Local development only.
 
-DROP TABLE IF EXISTS notifications, outbox, idempotency_keys, bookings, sessions;
+DROP TABLE IF EXISTS audit_log, notifications, outbox, idempotency_keys, bookings, sessions;
 
 CREATE TABLE sessions (
     id        bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -10,6 +10,8 @@ CREATE TABLE sessions (
     capacity  integer     NOT NULL CHECK (capacity > 0),
     -- Confirmed bookings, kept in step with the bookings table inside each transaction.
     booked    integer     NOT NULL DEFAULT 0,
+    -- A closed session takes no bookings; closing it cancels the ones it had.
+    status    text        NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
     -- Backstop for invariant 1: even a bug in the code can't push booked past capacity.
     CHECK (booked >= 0 AND booked <= capacity)
 );
@@ -20,7 +22,10 @@ CREATE TABLE bookings (
     swimmer_id   text        NOT NULL,
     status       text        NOT NULL CHECK (status IN ('confirmed', 'cancelled')),
     created_at   timestamptz NOT NULL DEFAULT now(),
-    cancelled_at timestamptz
+    cancelled_at timestamptz,
+    -- Why a booking was cancelled, so "My bookings" never leaves the swimmer guessing.
+    cancel_reason text CHECK (cancel_reason IN ('swimmer', 'capacity_reduced', 'session_closed')),
+    CHECK ((status = 'cancelled') = (cancel_reason IS NOT NULL))
 );
 
 -- One confirmed booking per swimmer per session. Catches a double tap that sends two different keys.
@@ -46,7 +51,7 @@ CREATE TABLE outbox (
     id              bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     swimmer_id      text        NOT NULL,
     booking_id      bigint      NOT NULL REFERENCES bookings (id),
-    kind            text        NOT NULL CHECK (kind IN ('booking_confirmed', 'booking_cancelled')),
+    kind            text        NOT NULL CHECK (kind IN ('booking_confirmed', 'booking_cancelled', 'booking_cancelled_by_pool')),
     message         text        NOT NULL,
     status          text        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'failed')),
     attempts        integer     NOT NULL DEFAULT 0,
@@ -65,4 +70,18 @@ CREATE TABLE notifications (
     swimmer_id text        NOT NULL,
     message    text        NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Every operator change to a session: who, what, before and after, and which bookings it cancelled
+-- (invariant 11: capacity reductions are handled explicitly and audited). Rows are only ever added.
+CREATE TABLE audit_log (
+    id                   bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    at                   timestamptz NOT NULL DEFAULT now(),
+    actor                text        NOT NULL,
+    action               text        NOT NULL CHECK (action IN ('capacity_changed', 'session_closed')),
+    session_id           bigint      NOT NULL REFERENCES sessions (id),
+    reason               text        NOT NULL,
+    before               jsonb       NOT NULL,
+    after                jsonb       NOT NULL,
+    affected_booking_ids bigint[]    NOT NULL DEFAULT '{}'
 );

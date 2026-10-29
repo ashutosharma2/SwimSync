@@ -5,6 +5,7 @@ The swimmer is identified by the X-Swimmer-Id header. That is a demo shortcut, n
 Run: .venv/bin/uvicorn --app-dir backend app.main:app --port 8001
 """
 
+import hmac
 import logging
 import os
 import time
@@ -15,8 +16,9 @@ import psycopg
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
 from psycopg.errors import UniqueViolation
+from pydantic import BaseModel, Field
 
-from . import booking, db
+from . import booking, db, operator
 
 INSTANCE = os.environ.get("SWIMSYNC_INSTANCE", "local")
 
@@ -153,3 +155,46 @@ def my_bookings(swimmer_id: SwimmerId):
 @app.get("/me/notifications")
 def my_notifications(swimmer_id: SwimmerId):
     return read(lambda conn: booking.my_notifications(conn, swimmer_id))
+
+
+# Operator endpoints. Access is a shared token in the X-Operator-Token header, compared in constant
+# time. It's a demo stand-in for real operator sign-in: if SWIMSYNC_OPERATOR_TOKEN isn't set, every
+# operator request is refused.
+
+OperatorToken = Annotated[str | None, Header(alias="X-Operator-Token")]
+
+
+def operator_allowed(token):
+    expected = os.environ.get("SWIMSYNC_OPERATOR_TOKEN")
+    return bool(expected) and token is not None and hmac.compare_digest(token.encode(), expected.encode())
+
+
+class CapacityChange(BaseModel):
+    capacity: int = Field(ge=1, le=500)
+    reason: str = Field(min_length=1, max_length=200)
+
+
+class Closure(BaseModel):
+    reason: str = Field(min_length=1, max_length=200)
+
+
+@app.post("/operator/sessions/{session_id}/capacity")
+def change_capacity(session_id: int, change: CapacityChange, token: OperatorToken = None):
+    if not operator_allowed(token):
+        return answer(403, {"error": "operator access required"})
+    status, body = run_change(
+        lambda conn: operator.set_capacity(conn, session_id, change.capacity, change.reason, "operator"),
+        None, {"changed": False},
+    )
+    return answer(status, body)
+
+
+@app.post("/operator/sessions/{session_id}/close")
+def close_session(session_id: int, closure: Closure, token: OperatorToken = None):
+    if not operator_allowed(token):
+        return answer(403, {"error": "operator access required"})
+    status, body = run_change(
+        lambda conn: operator.close_session(conn, session_id, closure.reason, "operator"),
+        None, {"changed": False},
+    )
+    return answer(status, body)

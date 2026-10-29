@@ -42,6 +42,8 @@ function message(state: BookState): [string, string] | null {
       return ["You already have this swim.", "text-emerald-700"];
     case "full":
       return ["That last place just went.", "text-amber-800"];
+    case "closed":
+      return ["The pool closed this session.", "text-amber-800"];
     case "not_booked":
       return ["Couldn't reach bookings. You're not booked.", "text-rose-700"];
     case "unknown":
@@ -64,7 +66,8 @@ export function SessionCard({ session, swimmer, onChanged, onShowBookings }: {
   const booked = session.capacity - session.remaining;
   const busy = state.kind === "booking" || state.kind === "checking";
   const finished = state.kind === "confirmed" || state.kind === "already";
-  const canPress = !busy && !finished && (session.remaining > 0 || state.kind === "unknown");
+  const isClosed = session.status === "closed" || state.kind === "closed";
+  const canPress = !busy && !finished && !isClosed && (session.remaining > 0 || state.kind === "unknown");
 
   async function onBook() {
     const result = await book(
@@ -83,7 +86,7 @@ export function SessionCard({ session, swimmer, onChanged, onShowBookings }: {
   }
 
   const note = message(state);
-  const label = BUTTON[state.kind] ?? (session.remaining > 0 ? "Book" : "Fully booked");
+  const label = BUTTON[state.kind] ?? (isClosed ? "Closed" : session.remaining > 0 ? "Book" : "Fully booked");
 
   return (
     <article className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4">
@@ -93,7 +96,7 @@ export function SessionCard({ session, swimmer, onChanged, onShowBookings }: {
           <span className="tabular-nums">{formatWhen(session.starts_at)}</span> · {session.name}
         </p>
         <p className="mt-0.5 text-sm text-slate-600">
-          {session.remaining > 0 ? `${session.remaining} of ${session.capacity} places left` : "Fully booked"}
+          {isClosed ? "Closed by the pool" : session.remaining > 0 ? `${session.remaining} of ${session.capacity} places left` : "Fully booked"}
         </p>
         <div className="mt-1.5">
           <CrowdChip booked={booked} capacity={session.capacity} />

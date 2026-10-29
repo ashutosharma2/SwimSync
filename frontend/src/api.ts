@@ -5,8 +5,9 @@ export type Answer =
   | { status: number; body: any }
   | { status: null; error: string };
 
-export type Session = { id: number; name: string; starts_at: string; capacity: number; remaining: number };
-export type MyBooking = { booking_id: number; session_id: number; session_name: string; starts_at: string; status: "confirmed" | "cancelled" };
+export type Session = { id: number; name: string; starts_at: string; capacity: number; remaining: number; status: "open" | "closed" };
+export type CancelReason = "swimmer" | "capacity_reduced" | "session_closed";
+export type MyBooking = { booking_id: number; session_id: number; session_name: string; starts_at: string; status: "confirmed" | "cancelled"; cancel_reason?: CancelReason | null };
 export type Notice = { id: number; message: string; created_at: string };
 
 // The app stops waiting after 4 s. The server may still finish the work, which is why a lost answer

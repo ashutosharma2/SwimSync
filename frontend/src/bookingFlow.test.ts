@@ -52,6 +52,12 @@ describe("booking", () => {
     expect(firstConfirmed).toBe(h.states.length - 1);
   });
 
+  it("a closed session is a final answer, not something to keep retrying", async () => {
+    const h = harness([{ status: 409, body: { error: "session is closed" } }]);
+    expect(await book(SESSION, h.deps, h.onState)).toEqual({ kind: "closed" });
+    expect(h.keysSent.length).toBe(1);
+  });
+
   it("full and already-booked are final answers", async () => {
     expect((await book(SESSION, harness([full]).deps, () => {})).kind).toBe("full");
     expect(await book(SESSION, harness([already]).deps, () => {})).toEqual({ kind: "already", bookingId: 7 });

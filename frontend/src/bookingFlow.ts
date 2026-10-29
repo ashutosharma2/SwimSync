@@ -13,6 +13,7 @@ export type BookState =
   | { kind: "confirmed"; bookingId: number; how: "first try" | "retry" | "found in my bookings" }
   | { kind: "already"; bookingId?: number }
   | { kind: "full" }
+  | { kind: "closed" }
   | { kind: "not_booked" }
   | { kind: "unknown"; detail: string }
   | { kind: "error"; message: string };
@@ -30,7 +31,7 @@ export const UNAVAILABLE_RETRIES = 2;
 export const UNAVAILABLE_DELAY_MS = 1000; // the server's Retry-After
 export const UNKNOWN_DELAYS_MS = [1000, 2000, 4000];
 
-type Verdict = "confirmed" | "already" | "full" | "unavailable" | "unknown" | "error";
+type Verdict = "confirmed" | "already" | "full" | "closed" | "unavailable" | "unknown" | "error";
 
 export function classify(answer: Answer): Verdict {
   if (answer.status === null) return "unknown"; // timeout or network error: the server may have saved it
@@ -38,6 +39,7 @@ export function classify(answer: Answer): Verdict {
   if ((status === 200 || status === 201) && body?.booking_id != null) return "confirmed";
   if (status === 409 && body?.booking_id != null) return "already";
   if (status === 409 && body?.error === "session is full") return "full";
+  if (status === 409 && body?.error === "session is closed") return "closed"; // the pool closed it
   if (status === 409) return "unknown"; // a request with the same key is still in progress
   if (status === 503 && body?.error === "database_unavailable") return "unavailable";
   if (status >= 500) return "unknown"; // outcome_unknown, or a proxy error: can't tell either way
@@ -66,6 +68,7 @@ export async function book(sessionId: number, deps: BookDeps, onState: (s: BookS
     if (verdict === "confirmed") return finish({ kind: "confirmed", bookingId: answer.status ? answer.body.booking_id : 0, how });
     if (verdict === "already") return finish({ kind: "already", bookingId: answer.status ? answer.body.booking_id : undefined });
     if (verdict === "full") return finish({ kind: "full" });
+    if (verdict === "closed") return finish({ kind: "closed" });
     if (verdict === "error") {
       const message = answer.status === 404 ? "That session no longer exists." : "Something's wrong with this request.";
       return finish({ kind: "error", message });

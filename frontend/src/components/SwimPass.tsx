@@ -12,6 +12,13 @@ const CANCEL_NOTE: Partial<Record<CancelState["kind"], [string, string]>> = {
   error: ["That booking wasn't found.", "text-rose-700"],
 };
 
+// Why a booking is cancelled, in the swimmer's words. A pool cancellation is never left unexplained.
+const CANCELLED_BECAUSE = {
+  swimmer: "Cancelled",
+  capacity_reduced: "Cancelled by the pool: capacity was reduced",
+  session_closed: "Cancelled by the pool: session closed",
+} as const;
+
 /** A confirmed booking as a ticket, with a QR code the front desk could scan. */
 export function SwimPass({ booking, swimmer, onChanged }: { booking: MyBooking; swimmer: string; onChanged: () => void }) {
   const [qr, setQr] = useState<string | null>(null);
@@ -50,7 +57,9 @@ export function SwimPass({ booking, swimmer, onChanged }: { booking: MyBooking; 
       }`}
     >
       <div className="min-w-0">
-        <p className={`text-xs font-medium ${active ? "text-water" : ""}`}>{active ? "Swim pass" : "Cancelled"}</p>
+        <p className={`text-xs font-medium ${active ? "text-water" : ""}`}>
+          {active ? "Swim pass" : CANCELLED_BECAUSE[booking.cancel_reason ?? "swimmer"]}
+        </p>
         <p className="font-semibold">{booking.session_name}</p>
         <p className="text-sm tabular-nums">
           {formatWhen(booking.starts_at)} · booking {booking.booking_id}

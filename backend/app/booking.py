@@ -1,7 +1,7 @@
 """Booking rules. Each function runs inside the caller's transaction and returns (status, body).
 
-Lock order is always the session row first. Booking and cancelling both follow it, so they
-queue behind each other per session and can't deadlock.
+Lock order is always the session row first. Booking, cancelling and the operator's capacity changes
+(operator.py) all follow it, so they queue behind each other per session and can't deadlock.
 """
 
 from psycopg.types.json import Jsonb
@@ -9,7 +9,7 @@ from psycopg.types.json import Jsonb
 
 def list_sessions(conn):
     rows = conn.execute(
-        "SELECT id, name, starts_at, capacity, booked FROM sessions ORDER BY starts_at, id"
+        "SELECT id, name, starts_at, capacity, booked, status FROM sessions ORDER BY starts_at, id"
     ).fetchall()
     return [
         {
@@ -17,6 +17,7 @@ def list_sessions(conn):
             "name": row["name"],
             "starts_at": row["starts_at"].isoformat(),
             "capacity": row["capacity"],
+            "status": row["status"],
             # Advisory only: it may be stale by the time you book. Only a booking reserves a place.
             "remaining": row["capacity"] - row["booked"],
         }
@@ -28,7 +29,7 @@ def book(conn, session_id, swimmer_id, key):
     # 1. Lock the session row. Every other booking or cancel for this session waits here until
     #    we commit, so "is there room?" and "take a place" can't be split by another request.
     session = conn.execute(
-        "SELECT name, capacity, booked FROM sessions WHERE id = %s FOR UPDATE", (session_id,)
+        "SELECT name, capacity, booked, status FROM sessions WHERE id = %s FOR UPDATE", (session_id,)
     ).fetchone()
     if session is None:
         return 404, {"error": "session not found"}
@@ -53,6 +54,8 @@ def book(conn, session_id, swimmer_id, key):
     if already is not None:
         status = 409
         body = {"error": "you already have a confirmed booking for this session", "booking_id": already["id"]}
+    elif session["status"] == "closed":
+        status, body = 409, {"error": "session is closed"}
     elif session["booked"] >= session["capacity"]:
         status, body = 409, {"error": "session is full"}
     else:
@@ -96,7 +99,10 @@ def cancel(conn, booking_id, swimmer_id):
         # A retry or a second tap: the cancel already happened. Report success, release nothing.
         return 200, {"booking_id": booking_id, "status": "cancelled", "already_cancelled": True}
 
-    conn.execute("UPDATE bookings SET status = 'cancelled', cancelled_at = now() WHERE id = %s", (booking_id,))
+    conn.execute(
+        "UPDATE bookings SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'swimmer' WHERE id = %s",
+        (booking_id,),
+    )
     conn.execute("UPDATE sessions SET booked = booked - 1 WHERE id = %s", (found["session_id"],))
     _queue_notification(
         conn, swimmer_id, booking_id, "booking_cancelled",
@@ -124,7 +130,7 @@ def my_notifications(conn, swimmer_id):
 
 def my_bookings(conn, swimmer_id):
     rows = conn.execute(
-        "SELECT b.id, b.session_id, s.name, s.starts_at, b.status"
+        "SELECT b.id, b.session_id, s.name, s.starts_at, b.status, b.cancel_reason"
         " FROM bookings b JOIN sessions s ON s.id = b.session_id"
         " WHERE b.swimmer_id = %s ORDER BY s.starts_at, b.id",
         (swimmer_id,),
@@ -136,6 +142,8 @@ def my_bookings(conn, swimmer_id):
             "session_name": row["name"],
             "starts_at": row["starts_at"].isoformat(),
             "status": row["status"],
+            # swimmer, capacity_reduced or session_closed: the swimmer always sees why.
+            "cancel_reason": row["cancel_reason"],
         }
         for row in rows
     ]
