@@ -156,7 +156,7 @@ npm --prefix frontend install
 .venv/bin/uvicorn --app-dir backend app.main:app --port 8001
 ```
 
-PostgreSQL stops when the Mac restarts; run the `pg_ctl ... start` line again. `scripts/seed.py` drops and recreates every SwimSync table, then adds three fictional sessions for tomorrow. Set `DATABASE_URL` to point it somewhere other than `postgresql:///swimsync`.
+PostgreSQL stops when the Mac restarts; run the `pg_ctl ... start` line again. `scripts/seed.py` drops and recreates every SwimSync table, then adds six fictional sessions for tomorrow. Set `DATABASE_URL` to point it somewhere other than `postgresql:///swimsync`.
 
 In a second terminal, start the frontend and open http://localhost:5173:
 

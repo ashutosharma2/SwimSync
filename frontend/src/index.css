@@ -1,18 +1,97 @@
+/* The design comes from prototype/index.html. Tailwind is kept for its base reset only. */
 @import "tailwindcss";
 
-@theme {
-  --color-water: #3b8fd9;
-  --color-water-soft: #dcecfa;
-  --color-deep: #0c447c;
-}
+/* Colours. Light first, then the night pool. The --pool-* ones are read by the canvas scenes. */
+:root{color-scheme:light;--page:#C6E7F0;--pool-floor-deep:#9ED3E2;--pool-tile-line:rgba(255,255,255,.45);--pool-shadow-a:.22;--card:#FFFFFF;--card-2:#F2F7F9;--line:#D3E0E6;--ink:#0F2A3A;--ink-2:#4A6272;--teal:#0E8C92;--teal-tint:#DDF3F3;--teal-ink:#0B5E63;--you:#0F2A3A;--red:#D33A45;--red-tint:#FBE5E7;--red-ink:#9B1C28;--amber:#F2B705;--amber-tint:#FFF4D1;--amber-ink:#5E4500;--free:#7C949F;--btn:#0F2A3A;--btn-ink:#FFFFFF;--focus:#0E8C92;--pass-bg:#0B5E63;--pass-ink:#FFFFFF;--pool-stand:#2A7792;--pool-aisle:#3F8CA8;--pool-seat:#F4CB4E;--pool-seat-2:#D29F1E;--pool-steel:#E6EEF1;--pool-clock-face:#FFFFFF;--pool-clock-ink:#0F2A3A;--pool-wall:#FFFFFF;--pool-deck:#F4F9FB;--pool-far:#8ED6E8;--pool-near:#43AFCB;--pool-mark:rgba(15,42,58,.30);--pool-float:#FFFFFF;--pool-float-2:#0E8C92;--pool-ripple:rgba(255,255,255,.8);--pool-light:#FFFFFF;--pool-shade:#0F2A3A;--pool-glow:1;--pool-vig:.6}
+:root[data-theme="dark"]{color-scheme:dark;--page:#0A2232;--pool-floor-deep:#051521;--pool-tile-line:rgba(140,220,235,.07);--pool-shadow-a:.45;--card:#0E2233;--card-2:#13293C;--line:#24425B;--ink:#E3EEF2;--ink-2:#A3B9C4;--teal:#2FC1C1;--teal-tint:#0F3A40;--teal-ink:#8BE3E1;--you:#E3EEF2;--red:#F0646C;--red-tint:#3A1A20;--red-ink:#FFB3B8;--amber-tint:#3A2F0A;--amber-ink:#FFD966;--free:#6F8C99;--btn:#2FC1C1;--btn-ink:#06131F;--focus:#2FC1C1;--pass-bg:#12474D;--pass-ink:#E3F7F6;--pool-stand:#0B2234;--pool-aisle:#11304A;--pool-seat:#8C7428;--pool-seat-2:#6A5619;--pool-steel:#8FA6B1;--pool-clock-face:#E3EEF2;--pool-clock-ink:#06131F;--pool-wall:#1B3A52;--pool-deck:#13293C;--pool-far:#16566C;--pool-near:#0A2C40;--pool-mark:rgba(0,8,16,.45);--pool-float:#A3B9C4;--pool-float-2:#1F8F95;--pool-ripple:rgba(160,225,240,.55);--pool-light:#8CE6F5;--pool-shade:#000000;--pool-glow:.75;--pool-vig:1}
+/* One type scale: each step is about 1.25 times the last */
+:root{--fs-1:13px;--fs-2:16px;--fs-3:20px;--fs-4:26px;--fs-5:34px;--fs-6:42px}
 
-/* The button's ripple when a booking is confirmed. Played only after the server says yes. */
-@keyframes ripple {
-  0% { box-shadow: 0 0 0 0 rgb(59 143 217 / 0.5); }
-  100% { box-shadow: 0 0 0 14px rgb(59 143 217 / 0); }
-}
-.ripple { animation: ripple 0.7s ease-out; }
+body{font-family:'Atkinson Hyperlegible Next',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:var(--fs-2);line-height:1.5;color:var(--ink);background:var(--page)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.pool-floor{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+.hero{height:clamp(220px,20vw,300px);background:var(--pool-deck);border-bottom:1px solid var(--line)}
+.water{display:block;width:100%;height:100%}
+.t{font-family:'Big Shoulders Display','Atkinson Hyperlegible Next',sans-serif;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.02em;line-height:1.1}
 
-/* A calm pulse while the outcome is unknown and the app is checking. */
-@keyframes calm { 50% { opacity: 0.55; } }
-.checking { animation: calm 1.4s ease-in-out infinite; }
+.demo{background:var(--amber);color:#2B2000;font-size:var(--fs-1);padding:8px 16px}
+.demo .in,.toolbar .in{max-width:600px;margin:0 auto;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;justify-content:space-between}
+.demo select{font-weight:700;border:1px solid rgba(43,32,0,.35);background:#FFF7DA;color:#2B2000;border-radius:6px;padding:2px 6px}
+.toolbar{background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px}
+.toolbar .in{gap:10px}
+.seg,.tabs{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--card-2);border:1px solid var(--line)}
+.seg button,.tabs button{border:0;background:transparent;color:var(--ink-2);font-weight:700;font-size:var(--fs-1);padding:6px 10px;border-radius:7px;cursor:pointer}
+.tabs button{font-size:var(--fs-2);padding:7px 12px}
+.seg button[aria-pressed="true"],.tabs button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.tool{font-weight:700;font-size:var(--fs-1);padding:7px 12px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+
+.app{max-width:600px;margin:0 auto;padding:20px 16px 56px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:0 1px 2px rgba(8,30,44,.06),0 10px 30px rgba(8,30,44,.10)}
+:root[data-theme="dark"] .panel{box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.panel-head{padding:18px 18px 14px;border-bottom:1px solid var(--line)}
+.panel-body{padding:14px 14px 18px}
+.brand{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.wordmark{font-size:var(--fs-6);line-height:1;letter-spacing:0}
+.count{display:inline-block;min-width:20px;margin-left:6px;padding:0 6px;border-radius:999px;background:var(--ink);color:var(--card);font-size:var(--fs-1);line-height:20px;text-align:center;font-variant-numeric:tabular-nums}
+.dayrow{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:20px}
+.day{font-size:var(--fs-3)}
+.asof{color:var(--ink-2);font-size:var(--fs-1);font-variant-numeric:tabular-nums}
+.asof.stale{color:var(--amber-ink);background:var(--amber-tint);padding:2px 8px;border-radius:6px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:var(--fs-1);color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend .b{flex:none;width:12px;animation:none}
+.hint{font-size:var(--fs-1);color:var(--ink-2);margin-top:6px}
+
+.list{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+.session{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+.session.closed{background:var(--card-2)}
+.s-top{display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap}
+.s-top .pill{margin-left:auto;align-self:center}
+.time{font-size:var(--fs-4);font-weight:700;line-height:1}
+.s-name{font-size:var(--fs-3);font-weight:700;line-height:1.2}
+/* A session's places as floats on a lane rope; the wall is the capacity */
+.rope{position:relative;display:flex;align-items:center;gap:3px;height:26px;margin:8px 0 4px;width:max-content;max-width:100%}
+.rope::before{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:var(--line);transform:translateY(-50%)}
+.wall{position:relative;flex:none;width:5px;height:24px;border-radius:3px;background:var(--ink);margin:0 4px}
+.wall:last-child{margin-right:0}
+.b{position:relative;display:inline-block;flex:0 1 auto;width:14px;min-width:5px;aspect-ratio:1;padding:0;border-radius:999px;background:var(--card);border:2px solid var(--free)}
+.b.on{background:var(--teal);border-color:var(--teal)}
+.b.red{border-color:var(--red)}
+.b.on.red{background:var(--red)}
+.b.you{background:var(--you);border-color:var(--you);box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--teal)}
+.b.chk{border-color:#B8900F;background:repeating-linear-gradient(135deg,var(--amber) 0 3px,var(--card) 3px 6px);animation:breathe 1.6s ease-in-out infinite}
+@keyframes breathe{50%{opacity:.5}}
+@media(prefers-reduced-motion:reduce){.b.chk{animation:none}}
+.s-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:6px}
+.line{font-size:var(--fs-2);color:var(--ink-2);max-width:60ch}
+.line.checking{color:var(--amber-ink);background:var(--amber-tint);padding:8px 10px;border-radius:10px}
+.line.warn{color:var(--red-ink)}
+.line.good{color:var(--teal-ink)}
+.pill{font-size:var(--fs-1);font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.pill.booked{background:var(--teal-tint);color:var(--teal-ink)}
+.pill.checking{background:var(--amber-tint);color:var(--amber-ink)}
+.pill.full,.pill.closed{background:var(--card-2);color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--line)}
+.btn{font-weight:700;font-size:var(--fs-2);padding:8px 16px;border-radius:10px;border:1.5px solid var(--btn);background:var(--btn);color:var(--btn-ink);cursor:pointer;white-space:nowrap}
+.btn:disabled{opacity:.6;cursor:default}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.btn-row.center{justify-content:center}
+
+.pass{background:var(--pass-bg);color:var(--pass-ink);border-radius:16px;padding:14px 16px;display:flex;justify-content:space-between;gap:14px}
+.pass.open{box-shadow:0 0 0 3px var(--amber)}
+.pass .t{font-size:var(--fs-4);font-weight:700;line-height:1}
+.pass h3{font-size:var(--fs-3);font-weight:700;margin-top:4px}
+.pass p{opacity:.9}
+.pass .btn{background:transparent;color:var(--pass-ink);border-color:currentColor;margin-top:12px}
+.qr{background:#fff;padding:6px;border-radius:8px;width:100px;height:100px;flex:none;display:grid;place-items:center;color:#0F2A3A;font-size:var(--fs-1);text-align:center}
+.qr img{width:88px;height:88px}
+.pass-note{font-size:var(--fs-1);margin-top:8px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.14)}
+.section-title{font-family:'Big Shoulders Display','Atkinson Hyperlegible Next',sans-serif;font-weight:800;letter-spacing:.02em;font-size:var(--fs-3);line-height:1.1;margin:22px 0 8px}
+.section-title:first-child{margin-top:4px}
+.gone{padding:10px 12px;border-radius:12px;background:var(--card-2)}
+.gone b{display:block}
+.gone .t{font-size:var(--fs-3);font-weight:700;margin-right:6px}
+.inbox li{padding:8px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:52px minmax(0,1fr);gap:10px}
+.inbox .t{font-size:var(--fs-3);font-weight:700}
+.empty{text-align:center;padding:24px 8px;color:var(--ink-2)}
+.sub{color:var(--ink-2);max-width:60ch;margin-top:4px}

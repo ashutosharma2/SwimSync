@@ -1,4 +1,4 @@
-"""Reset the local database and add three fictional sessions for tomorrow.
+"""Reset the local database and add six fictional sessions for tomorrow.
 
 Warning: this drops every SwimSync table in the target database. Local development only.
 
@@ -14,11 +14,14 @@ import psycopg
 SCHEMA = pathlib.Path(__file__).resolve().parent.parent / "db" / "schema.sql"
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql:///swimsync")
 
-# (name, start hour, capacity). Fictional pool, fictional sessions.
+# (name, start hour, start minute, capacity). Fictional pool, fictional sessions.
 SESSIONS = [
-    ("Morning lane swim", 7, 20),
-    ("Lunchtime swim", 13, 10),
-    ("Evening family swim", 18, 5),
+    ("Early lanes", 6, 30, 24),
+    ("Morning lane swim", 7, 0, 20),
+    ("Aqua fit", 10, 0, 12),
+    ("Lunchtime swim", 12, 30, 10),
+    ("Evening family swim", 18, 0, 5),
+    ("Late lanes", 20, 30, 16),
 ]
 
 
@@ -26,10 +29,10 @@ def main():
     tomorrow = (datetime.now().astimezone() + timedelta(days=1)).replace(minute=0, second=0, microsecond=0)
     with psycopg.connect(DATABASE_URL) as conn:
         conn.execute(SCHEMA.read_text())
-        for name, hour, capacity in SESSIONS:
+        for name, hour, minute, capacity in SESSIONS:
             conn.execute(
                 "INSERT INTO sessions (name, starts_at, capacity) VALUES (%s, %s, %s)",
-                (name, tomorrow.replace(hour=hour), capacity),
+                (name, tomorrow.replace(hour=hour, minute=minute), capacity),
             )
     print(f"Reset {DATABASE_URL} and added {len(SESSIONS)} sessions for {tomorrow.date()}.")
 

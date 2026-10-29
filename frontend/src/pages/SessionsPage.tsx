@@ -1,67 +1,50 @@
-import { useEffect, useState } from "react";
-
-import { api, type Session } from "../api";
+import type { MyBooking, Session } from "../api";
+import { RopeLegend } from "../components/FloatRope";
 import { SessionCard } from "../components/SessionCard";
-import { formatClock } from "../time";
+import { clock, dayLabel } from "../time";
 
-const REFRESH_MS = 5000;
-
-export function SessionsPage({ swimmer, changes, onChanged, onShowBookings }: {
-  swimmer: string;
-  changes: number;
-  onChanged: () => void;
-  onShowBookings: () => void;
-}) {
-  const [sessions, setSessions] = useState<Session[] | null>(null);
-  const [asOf, setAsOf] = useState<Date | null>(null);
-  const [unreachable, setUnreachable] = useState(false);
-
-  useEffect(() => {
-    let stopped = false;
-    async function load() {
-      const answer = await api.sessions();
-      if (stopped) return;
-      if (answer.status === 200) {
-        setSessions(answer.body);
-        setAsOf(new Date());
-        setUnreachable(false);
-      } else {
-        setUnreachable(true); // keep showing the last numbers, marked as old
-      }
-    }
-    load();
-    const timer = setInterval(load, REFRESH_MS);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [changes]);
-
+/** The top of the panel: the day, how fresh the numbers are, and what the floats mean. */
+export function SessionsHead({ sessions, asOf, stale }: { sessions: Session[] | null; asOf: Date | null; stale: boolean }) {
+  const label = asOf ? (stale ? `Couldn't refresh. Places as of ${clock(asOf)}` : `Places as of ${clock(asOf)}`) : stale ? "Can't reach the booking server." : "Loading places…";
   return (
-    <section>
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold">Tomorrow's sessions</h2>
-        {asOf ? (
-          <p className={`text-xs ${unreachable ? "text-amber-800" : "text-slate-500"}`}>
-            Places left as of {formatClock(asOf)}
-            {unreachable ? " · can't reach the server, showing the last numbers" : " · updates every 5 s"}
-          </p>
-        ) : null}
+    <>
+      <div className="dayrow">
+        <h2 className="t day">{sessions?.length ? dayLabel(sessions[0].starts_at) : "Sessions"}</h2>
+        <span className={`asof${stale ? " stale" : ""}`}>{label}</span>
       </div>
+      <RopeLegend />
+      <p className="hint">Each float is one place. The numbers can be a few seconds old; only a confirmation reserves a place.</p>
+    </>
+  );
+}
 
-      {sessions === null ? (
-        <p className="text-sm text-slate-500">{unreachable ? "Can't reach the booking server right now." : "Loading sessions…"}</p>
-      ) : (
-        <div className="grid gap-3">
-          {sessions.map((s) => (
-            <SessionCard key={`${swimmer}-${s.id}`} session={s} swimmer={swimmer} onChanged={onChanged} onShowBookings={onShowBookings} />
-          ))}
-        </div>
-      )}
-
-      <p className="mt-4 text-xs text-slate-500">
-        The number of places is a guide that can be a few seconds old. Only a confirmation from the server reserves a place.
-      </p>
-    </section>
+export function SessionsPage({ sessions, mine, swimmer, onChanged, onShowPass }: {
+  sessions: Session[] | null;
+  mine: MyBooking[] | null;
+  swimmer: string;
+  onChanged: () => void;
+  onShowPass: (bookingId: number | null) => void;
+}) {
+  if (sessions === null) return <p className="empty">Loading sessions…</p>;
+  if (sessions.length === 0) return <p className="empty">No sessions are open for booking yet.</p>;
+  return (
+    <div className="list">
+      {sessions.map((s) => {
+        const confirmed = mine?.find((b) => b.session_id === s.id && b.status === "confirmed");
+        // The pool cancelled this swimmer's booking here (capacity cut or closure): the card says so.
+        const poolCut = !confirmed && !!mine?.some((b) => b.session_id === s.id && b.status === "cancelled" && b.cancel_reason && b.cancel_reason !== "swimmer");
+        return (
+          <SessionCard
+            key={`${swimmer}-${s.id}`}
+            session={s}
+            swimmer={swimmer}
+            mine={confirmed}
+            poolCut={poolCut}
+            onChanged={onChanged}
+            onShowPass={onShowPass}
+          />
+        );
+      })}
+    </div>
   );
 }

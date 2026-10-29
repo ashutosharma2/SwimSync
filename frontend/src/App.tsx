@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 
-import { MyBookingsPage } from "./pages/MyBookingsPage";
-import { SessionsPage } from "./pages/SessionsPage";
+import { PoolFloor } from "./components/PoolFloor";
+import { PoolHeader } from "./components/PoolHeader";
+import { BookingsHead, MyBookingsPage } from "./pages/MyBookingsPage";
+import { SessionsHead, SessionsPage } from "./pages/SessionsPage";
+import { useSettings, type Theme } from "./settings";
+import { useSwimmerData } from "./useSwimmerData";
 
 const SWIMMERS = Array.from({ length: 12 }, (_, i) => `swimmer-${String(i + 1).padStart(2, "0")}`);
+const THEMES: [Theme, string][] = [["device", "Match device"], ["light", "Light"], ["dark", "Night pool"]];
 
 function storedSwimmer() {
   try {
@@ -13,11 +18,15 @@ function storedSwimmer() {
   }
 }
 
+/** The swimmer's screen: phone-first, one panel with two tabs. */
 export function App() {
-  const [page, setPage] = useState<"sessions" | "bookings">("sessions");
+  const [tab, setTab] = useState<"sessions" | "bookings">("sessions");
   const [swimmer, setSwimmer] = useState(storedSwimmer);
-  // Bumped after any booking change, so both pages re-read the server's record.
+  // Bumped after any booking change, so the data is read again straight away.
   const [changes, setChanges] = useState(0);
+  const [openPass, setOpenPass] = useState<number | null>(null);
+  const settings = useSettings();
+  const { sessions, mine, notices, asOf, stale } = useSwimmerData(swimmer, changes);
 
   useEffect(() => {
     try {
@@ -27,54 +36,66 @@ export function App() {
     }
   }, [swimmer]);
 
-  const tab = (id: typeof page, label: string) => (
-    <button
-      onClick={() => setPage(id)}
-      className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-        page === id ? "bg-deep text-white" : "text-slate-600 hover:bg-water-soft"
-      }`}
-    >
-      {label}
-    </button>
-  );
+  const changed = () => setChanges((n) => n + 1);
+  const passCount = mine?.filter((b) => b.status === "confirmed").length ?? 0;
+  const showTab = (next: typeof tab, pass: number | null = null) => {
+    setOpenPass(pass);
+    setTab(next);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 px-4 py-4">
-          <div>
-            <h1 className="text-xl font-semibold text-deep">SwimSync</h1>
-            <p className="text-xs text-slate-500">Fictional pool. A booking here always means a place.</p>
-          </div>
-          <nav className="flex gap-1">
-            {tab("sessions", "Sessions")}
-            {tab("bookings", "My bookings")}
-          </nav>
-        </div>
-        <div className="border-t border-amber-200 bg-amber-50">
-          <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2 text-xs text-amber-900">
-            <span>You are</span>
-            <select
-              value={swimmer}
-              onChange={(e) => setSwimmer(e.target.value)}
-              className="rounded border border-amber-300 bg-white px-1.5 py-0.5"
-            >
-              {SWIMMERS.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
+    <>
+      <PoolFloor />
+      <div className="demo">
+        <div className="in">
+          <span>Demo: there's no sign-in, so pick any swimmer.</span>
+          <label>
+            You're{" "}
+            <select value={swimmer} onChange={(e) => { setSwimmer(e.target.value); setOpenPass(null); }} aria-label="Swimmer">
+              {SWIMMERS.map((s) => <option key={s}>{s}</option>)}
             </select>
-            <span>Demo only: there's no login, so pick any swimmer.</span>
-          </div>
+          </label>
         </div>
-      </header>
+      </div>
 
-      <main className="mx-auto max-w-3xl px-4 py-6">
-        {page === "sessions" ? (
-          <SessionsPage swimmer={swimmer} changes={changes} onChanged={() => setChanges((n) => n + 1)} onShowBookings={() => setPage("bookings")} />
-        ) : (
-          <MyBookingsPage swimmer={swimmer} changes={changes} onChanged={() => setChanges((n) => n + 1)} />
-        )}
+      <PoolHeader />
+
+      <div className="toolbar">
+        <div className="in">
+          <div className="seg" role="group" aria-label="Theme">
+            {THEMES.map(([value, label]) => (
+              <button key={value} aria-pressed={settings.theme === value} onClick={() => settings.setTheme(value)}>{label}</button>
+            ))}
+          </div>
+          <button className="tool" aria-pressed={settings.paused} onClick={() => settings.setPaused(!settings.paused)}>
+            {settings.paused ? "Play water" : "Pause water"}
+          </button>
+        </div>
+      </div>
+
+      <main className="app">
+        <section className="panel" aria-labelledby="app-title">
+          <div className="panel-head">
+            <div className="brand">
+              <h1 id="app-title" className="t wordmark">SwimSync</h1>
+              <div className="tabs" role="tablist" aria-label="Swimmer views">
+                <button role="tab" aria-selected={tab === "sessions"} onClick={() => showTab("sessions")}>Sessions</button>
+                <button role="tab" aria-selected={tab === "bookings"} onClick={() => showTab("bookings")}>
+                  Your bookings<span className="count">{passCount}</span>
+                </button>
+              </div>
+            </div>
+            {tab === "sessions" ? <SessionsHead sessions={sessions} asOf={asOf} stale={stale} /> : <BookingsHead mine={mine} swimmer={swimmer} />}
+          </div>
+          <div className="panel-body" role="tabpanel">
+            {tab === "sessions" ? (
+              <SessionsPage sessions={sessions} mine={mine} swimmer={swimmer} onChanged={changed} onShowPass={(id) => showTab("bookings", id)} />
+            ) : (
+              <MyBookingsPage mine={mine} notices={notices} swimmer={swimmer} openPass={openPass} onChanged={changed} onSeeSessions={() => showTab("sessions")} />
+            )}
+          </div>
+        </section>
       </main>
-    </div>
+    </>
   );
 }

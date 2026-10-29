@@ -1,35 +1,32 @@
 import QRCode from "qrcode";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api, type MyBooking } from "../api";
 import { cancel, type CancelState } from "../bookingFlow";
-import { formatWhen, sleep } from "../time";
+import { dayLabel, hhmm, sleep } from "../time";
 
-const CANCEL_NOTE: Partial<Record<CancelState["kind"], [string, string]>> = {
-  checking: ["Not sure the cancel went through. Checking; repeating it is safe.", "text-amber-800 checking"],
-  not_cancelled: ["Couldn't reach bookings. Your booking is still confirmed.", "text-rose-700"],
-  unknown: ["We couldn't confirm the cancel yet. Check again in a moment.", "text-amber-800"],
-  error: ["That booking wasn't found.", "text-rose-700"],
+const CANCEL_NOTE: Partial<Record<CancelState["kind"], string>> = {
+  checking: "Not sure the cancel went through. Checking; repeating it is safe.",
+  not_cancelled: "Couldn't reach the pool's system. Your booking is still confirmed.",
+  unknown: "We couldn't confirm the cancel yet. Check again in a moment.",
+  error: "That booking wasn't found.",
 };
 
-// Why a booking is cancelled, in the swimmer's words. A pool cancellation is never left unexplained.
-const CANCELLED_BECAUSE = {
-  swimmer: "Cancelled",
-  capacity_reduced: "Cancelled by the pool: capacity was reduced",
-  session_closed: "Cancelled by the pool: session closed",
-} as const;
-
 /** A confirmed booking as a ticket, with a QR code the front desk could scan. */
-export function SwimPass({ booking, swimmer, onChanged }: { booking: MyBooking; swimmer: string; onChanged: () => void }) {
+export function SwimPass({ booking, swimmer, open, onChanged }: { booking: MyBooking; swimmer: string; open: boolean; onChanged: () => void }) {
   const [qr, setQr] = useState<string | null>(null);
   const [state, setState] = useState<CancelState>({ kind: "idle" });
-  const active = booking.status === "confirmed";
+  const card = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    QRCode.toDataURL(`SWIMSYNC-BOOKING-${booking.booking_id}`, { margin: 1, width: 96 })
+    QRCode.toDataURL(`SWIMSYNC-BOOKING-${booking.booking_id}`, { margin: 1, width: 88, color: { dark: "#0F2A3A", light: "#FFFFFF" } })
       .then(setQr)
       .catch(() => setQr(null));
   }, [booking.booking_id]);
+
+  useEffect(() => {
+    if (open) card.current?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }, [open]);
 
   async function onCancel() {
     const result = await cancel(
@@ -51,31 +48,18 @@ export function SwimPass({ booking, swimmer, onChanged }: { booking: MyBooking; 
   const note = CANCEL_NOTE[state.kind];
 
   return (
-    <article
-      className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${
-        active ? "border-water bg-white" : "border-slate-200 bg-slate-100 text-slate-500"
-      }`}
-    >
-      <div className="min-w-0">
-        <p className={`text-xs font-medium ${active ? "text-water" : ""}`}>
-          {active ? "Swim pass" : CANCELLED_BECAUSE[booking.cancel_reason ?? "swimmer"]}
-        </p>
-        <p className="font-semibold">{booking.session_name}</p>
-        <p className="text-sm tabular-nums">
-          {formatWhen(booking.starts_at)} · booking {booking.booking_id}
-        </p>
-        {note ? <p className={`mt-1 text-sm ${note[1]}`}>{note[0]}</p> : null}
-        {active ? (
-          <button
-            onClick={onCancel}
-            disabled={busy}
-            className="mt-2 rounded-lg border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            {state.kind === "cancelling" ? "Cancelling…" : state.kind === "checking" ? "Checking…" : "Cancel booking"}
-          </button>
-        ) : null}
+    <article ref={card} className={`pass${open ? " open" : ""}`}>
+      <div>
+        <span className="t">{hhmm(booking.starts_at)}</span>
+        <h3>{booking.session_name}</h3>
+        <p>{dayLabel(booking.starts_at)}. Booking {booking.booking_id} for {swimmer}.</p>
+        <p>Show this at the desk.</p>
+        {note ? <p className="pass-note" aria-live="polite">{note}</p> : null}
+        <button className="btn" onClick={onCancel} disabled={busy}>
+          {state.kind === "cancelling" ? "Cancelling…" : state.kind === "checking" ? "Checking…" : "Cancel booking"}
+        </button>
       </div>
-      {active && qr ? <img src={qr} alt={`QR code for booking ${booking.booking_id}`} className="size-24 shrink-0" /> : null}
+      <div className="qr">{qr ? <img src={qr} alt={`QR code for booking ${booking.booking_id}`} /> : `Booking ${booking.booking_id}`}</div>
     </article>
   );
 }
