@@ -64,4 +64,15 @@ for d in api worker web; do
   "${K[@]}" -n "$NS" rollout status "deployment/$d" --timeout=180s
 done
 
-echo "SwimSync is up: http://127.0.0.1:8089"
+# Ready pods aren't reachable straight away: the Service starts routing to them a moment later. In
+# CI a booking sent 0.25 s after the rollout finished got a 502. Wait until the API answers through
+# the web frontend, the way a browser reaches it.
+for _ in $(seq 1 60); do
+  if [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8089/api/health)" = 200 ]; then
+    echo "SwimSync is up: http://127.0.0.1:8089"
+    exit 0
+  fi
+  sleep 1
+done
+echo "The pods are running, but the API didn't answer through http://127.0.0.1:8089 within 60 s." >&2
+exit 1
