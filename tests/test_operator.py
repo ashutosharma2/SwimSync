@@ -206,3 +206,38 @@ def test_swimmer_sees_why_their_booking_was_cancelled(monkeypatch):
 
     assert [(b["status"], b["cancel_reason"]) for b in ben] == [("cancelled", "capacity_reduced")]
     assert [(s["capacity"], s["remaining"], s["status"]) for s in listed] == [(1, 0, "open")]
+
+
+# The change log, read back for the operator screen.
+
+def test_change_log_needs_the_token(monkeypatch):
+    monkeypatch.delenv("SWIMSYNC_OPERATOR_TOKEN", raising=False)
+    assert client.get("/operator/audit", headers={"X-Operator-Token": TOKEN}).status_code == 403  # not configured
+
+    monkeypatch.setenv("SWIMSYNC_OPERATOR_TOKEN", TOKEN)
+    assert client.get("/operator/audit").status_code == 403  # no token
+    assert client.get("/operator/audit", headers={"X-Operator-Token": "guess"}).status_code == 403  # wrong token
+    assert client.get("/operator/audit", headers={"X-Operator-Token": TOKEN}).status_code == 200
+
+
+def test_change_log_is_newest_first_with_before_after_and_affected_bookings(monkeypatch):
+    monkeypatch.setenv("SWIMSYNC_OPERATOR_TOKEN", TOKEN)
+    session = make_session(capacity=3, name="Lunchtime swim")
+    ids = [book(session, s)[1]["booking_id"] for s in ["ana", "ben", "cai"]]
+    set_capacity(session, 2)  # cai booked last, so cai loses the place
+    close(session)  # ana and ben
+
+    log = client.get("/operator/audit", headers={"X-Operator-Token": TOKEN}).json()
+
+    assert [entry["action"] for entry in log] == ["session_closed", "capacity_changed"]
+    cut = log[1]
+    assert (cut["session_name"], cut["reason"], cut["actor"]) == ("Lunchtime swim", "lifeguard off sick", "operator")
+    assert (cut["before"], cut["after"]) == ({"capacity": 3, "booked": 3}, {"capacity": 2, "booked": 2})
+    assert cut["affected_booking_ids"] == [ids[2]]
+    assert sorted(log[0]["affected_booking_ids"]) == [ids[0], ids[1]]
+
+
+def test_change_log_is_empty_before_any_change(monkeypatch):
+    monkeypatch.setenv("SWIMSYNC_OPERATOR_TOKEN", TOKEN)
+    make_session(capacity=3)
+    assert client.get("/operator/audit", headers={"X-Operator-Token": TOKEN}).json() == []

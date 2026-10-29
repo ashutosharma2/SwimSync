@@ -77,6 +77,32 @@ def set_capacity(conn, session_id, new_capacity, reason, actor):
     return 200, {"session_id": session_id, "capacity": new_capacity, "changed": True, "cancelled_booking_ids": cancelled}
 
 
+def change_log(conn, limit=50):
+    """The audit log, newest first, with each session's name for display."""
+    rows = conn.execute(
+        "SELECT a.id, a.at, a.actor, a.action, a.session_id, s.name AS session_name, a.reason,"
+        " a.before, a.after, a.affected_booking_ids"
+        " FROM audit_log a JOIN sessions s ON s.id = a.session_id"
+        " ORDER BY a.at DESC, a.id DESC LIMIT %s",
+        (limit,),
+    ).fetchall()
+    return 200, [
+        {
+            "id": row["id"],
+            "at": row["at"].isoformat(),
+            "actor": row["actor"],
+            "action": row["action"],
+            "session_id": row["session_id"],
+            "session_name": row["session_name"],
+            "reason": row["reason"],
+            "before": row["before"],
+            "after": row["after"],
+            "affected_booking_ids": list(row["affected_booking_ids"]),
+        }
+        for row in rows
+    ]
+
+
 def close_session(conn, session_id, reason, actor):
     session = _lock(conn, session_id)
     if session is None:

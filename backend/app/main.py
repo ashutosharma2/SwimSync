@@ -189,6 +189,14 @@ def change_capacity(session_id: int, change: CapacityChange, token: OperatorToke
     return answer(status, body)
 
 
+@app.get("/operator/audit")
+def change_log(token: OperatorToken = None):
+    # Every capacity change and closure, newest first. Read-only, but still behind the token.
+    if not operator_allowed(token):
+        return answer(403, {"error": "operator access required"})
+    return read(lambda conn: answer(*operator.change_log(conn)))
+
+
 @app.post("/operator/sessions/{session_id}/close")
 def close_session(session_id: int, closure: Closure, token: OperatorToken = None):
     if not operator_allowed(token):
