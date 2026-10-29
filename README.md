@@ -6,6 +6,8 @@ A booking system for swimming sessions that never confirms more places than a se
 
 The full story of the project, including every real error I hit, is in [docs/project-story.md](docs/project-story.md). The architecture diagrams are in [docs/architecture.md](docs/architecture.md), and a one-line-per-day build log is in [LOG.md](LOG.md).
 
+To try it without installing anything, open [prototype/index.html](prototype/index.html) in a browser. It is a browser simulation of the booking rules with made-up data, not the real app.
+
 ## Status
 
 | Phase | | |

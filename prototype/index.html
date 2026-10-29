@@ -1,0 +1,1740 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwimSync demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;700&family=Big+Shoulders+Display:wght@700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+<!--
+  SwimSync demo: one file, made-up data, no server.
+
+  The page carries a small copy of the booking API's rules and runs them in the browser: a lock per
+  session, idempotency keys, the CHECK (booked <= capacity) backstop, newest-first capacity cuts with
+  an audit log, and an outbox that delivers notices. The demo buttons send real requests through
+  those rules and report the answers they actually got. The real API is in backend/app.
+-->
+<style>
+:root{color-scheme:light;--page:#C6E7F0;--pool-floor-deep:#9ED3E2;--pool-tile-line:rgba(255,255,255,.45);--pool-shadow-a:.22;--card:#FFFFFF;--card-2:#F2F7F9;--line:#D3E0E6;--ink:#0F2A3A;--ink-2:#4A6272;--teal:#0E8C92;--teal-tint:#DDF3F3;--teal-ink:#0B5E63;--you:#0F2A3A;--red:#D33A45;--red-tint:#FBE5E7;--red-ink:#9B1C28;--amber:#F2B705;--amber-tint:#FFF4D1;--amber-ink:#5E4500;--free:#7C949F;--btn:#0F2A3A;--btn-ink:#FFFFFF;--focus:#0E8C92;--pass-bg:#0B5E63;--pass-ink:#FFFFFF;--pool-stand:#2A7792;--pool-aisle:#3F8CA8;--pool-seat:#F4CB4E;--pool-seat-2:#D29F1E;--pool-steel:#E6EEF1;--pool-clock-face:#FFFFFF;--pool-clock-ink:#0F2A3A;--pool-wall:#FFFFFF;--pool-deck:#F4F9FB;--pool-far:#8ED6E8;--pool-near:#43AFCB;--pool-mark:rgba(15,42,58,.30);--pool-float:#FFFFFF;--pool-float-2:#0E8C92;--pool-ripple:rgba(255,255,255,.8);--pool-light:#FFFFFF;--pool-shade:#0F2A3A;--pool-glow:1;--pool-vig:.6}
+:root[data-theme="dark"]{color-scheme:dark;--page:#0A2232;--pool-floor-deep:#051521;--pool-tile-line:rgba(140,220,235,.07);--pool-shadow-a:.45;--card:#0E2233;--card-2:#13293C;--line:#24425B;--ink:#E3EEF2;--ink-2:#A3B9C4;--teal:#2FC1C1;--teal-tint:#0F3A40;--teal-ink:#8BE3E1;--you:#E3EEF2;--red:#F0646C;--red-tint:#3A1A20;--red-ink:#FFB3B8;--amber-tint:#3A2F0A;--amber-ink:#FFD966;--free:#6F8C99;--btn:#2FC1C1;--btn-ink:#06131F;--focus:#2FC1C1;--pass-bg:#12474D;--pass-ink:#E3F7F6;--pool-stand:#0B2234;--pool-aisle:#11304A;--pool-seat:#8C7428;--pool-seat-2:#6A5619;--pool-steel:#8FA6B1;--pool-clock-face:#E3EEF2;--pool-clock-ink:#06131F;--pool-wall:#1B3A52;--pool-deck:#13293C;--pool-far:#16566C;--pool-near:#0A2C40;--pool-mark:rgba(0,8,16,.45);--pool-float:#A3B9C4;--pool-float-2:#1F8F95;--pool-ripple:rgba(160,225,240,.55);--pool-light:#8CE6F5;--pool-shade:#000000;--pool-glow:.75;--pool-vig:1}
+:root{--fs-1:13px;--fs-2:16px;--fs-3:20px;--fs-4:26px;--fs-5:34px;--fs-6:42px}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:'Atkinson Hyperlegible Next',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:var(--fs-2);line-height:1.5;color:var(--ink);background:var(--page)}
+h1,h2,h3,p{margin:0}
+ul{margin:0;padding:0;list-style:none}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+#floor{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+.hero{height:clamp(220px,20vw,300px);background:var(--pool-deck);border-bottom:1px solid var(--line)}
+#water{display:block;width:100%;height:100%}
+.t{font-family:'Big Shoulders Display','Atkinson Hyperlegible Next',sans-serif;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.02em;line-height:1.1}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.demo{background:var(--amber);color:#2B2000;font-size:var(--fs-1);padding:8px 16px}
+.demo .in{max-width:1180px;margin:0 auto;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;justify-content:space-between}
+.demo select{font-weight:700;border:1px solid rgba(43,32,0,.35);background:#FFF7DA;color:#2B2000;border-radius:6px;padding:2px 6px}
+.toolbar{background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px}
+@media(min-width:768px){.toolbar{position:sticky;top:0;z-index:5}}
+.toolbar .in{max-width:1180px;margin:0 auto;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between}
+.group{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.group-label{font-size:var(--fs-1);color:var(--ink-2)}
+.seg,.tabs{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--card-2);border:1px solid var(--line)}
+.seg button,.tabs button{border:0;background:transparent;color:var(--ink-2);font-weight:700;font-size:var(--fs-1);padding:6px 10px;border-radius:7px;cursor:pointer}
+.tabs button{font-size:var(--fs-2);padding:7px 12px}
+.seg button[aria-pressed="true"],.tabs button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.tool{font-weight:700;font-size:var(--fs-1);padding:7px 12px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.tool.armed{background:var(--amber-tint);border-color:var(--amber);color:var(--amber-ink)}
+.tool.off{background:var(--red-tint);border-color:var(--red);color:var(--red-ink)}
+@media(max-width:600px){
+  .toolbar{padding:8px 12px}
+  .toolbar .in,.group{gap:6px}
+  .seg button,.tool{padding:5px 8px}
+  .group-label{display:none}
+}
+
+main{max-width:1180px;margin:0 auto;padding:20px 16px 56px;display:grid;gap:20px;grid-template-columns:minmax(0,1fr)}
+@media(min-width:1024px){main{grid-template-columns:minmax(0,540px) minmax(0,1fr);align-items:start}}
+.right{display:grid;gap:20px;min-width:0}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:0 1px 2px rgba(8,30,44,.06),0 10px 30px rgba(8,30,44,.10)}
+:root[data-theme="dark"] .panel{box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.panel-head{padding:18px 18px 14px;border-bottom:1px solid var(--line)}
+.panel-body{padding:14px 14px 18px}
+.brand{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.wordmark{font-size:var(--fs-6);line-height:1;letter-spacing:0}
+.count{display:inline-block;min-width:20px;margin-left:6px;padding:0 6px;border-radius:999px;background:var(--ink);color:var(--card);font-size:var(--fs-1);line-height:20px;text-align:center;font-variant-numeric:tabular-nums}
+.dayrow{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:20px}
+.day{font-size:var(--fs-3)}
+.asof{color:var(--ink-2);font-size:var(--fs-1);font-variant-numeric:tabular-nums}
+.asof.stale{color:var(--amber-ink);background:var(--amber-tint);padding:2px 8px;border-radius:6px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:var(--fs-1);color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend .b{flex:none;width:12px;animation:none}
+.hint{font-size:var(--fs-1);color:var(--ink-2);margin-top:6px}
+
+.list{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+.session{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+.session.selected{box-shadow:0 0 0 2px var(--teal)}
+.session.closed{background:var(--card-2)}
+.s-top{display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap}
+.s-top .pill{margin-left:auto;align-self:center}
+.time{font-size:var(--fs-4);font-weight:700;line-height:1}
+.s-name{font-size:var(--fs-3);font-weight:700;line-height:1.2}
+.rope-btn{display:block;width:100%;border:0;background:transparent;padding:0;cursor:pointer;border-radius:8px}
+.rope{position:relative;display:flex;align-items:center;gap:3px;height:26px;margin:8px 0 4px;width:max-content;max-width:100%}
+.rope::before{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:var(--line);transform:translateY(-50%)}
+.wall{position:relative;flex:none;width:5px;height:24px;border-radius:3px;background:var(--ink);margin:0 4px}
+.wall:last-child{margin-right:0}
+.b{position:relative;flex:0 1 auto;width:14px;min-width:5px;aspect-ratio:1;padding:0;border-radius:999px;background:var(--card);border:2px solid var(--free)}
+.b.on{background:var(--teal);border-color:var(--teal)}
+.b.red{border-color:var(--red)}
+.b.on.red{background:var(--red)}
+.b.you{background:var(--you);border-color:var(--you);box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--teal)}
+.b.chk{border-color:#B8900F;background:repeating-linear-gradient(135deg,var(--amber) 0 3px,var(--card) 3px 6px);animation:breathe 1.6s ease-in-out infinite}
+.b.lose{border-color:var(--red);background:repeating-linear-gradient(135deg,var(--red) 0 3px,var(--card) 3px 6px)}
+button.b{cursor:pointer;width:18px}
+.b.picked{box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--ink)}
+@keyframes breathe{50%{opacity:.5}}
+@media(prefers-reduced-motion:reduce){.b.chk{animation:none}}
+.s-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:6px}
+.line{font-size:var(--fs-2);color:var(--ink-2);max-width:60ch}
+.line.checking{color:var(--amber-ink);background:var(--amber-tint);padding:8px 10px;border-radius:10px}
+.line.warn{color:var(--red-ink)}
+.line.good{color:var(--teal-ink)}
+.pill{font-size:var(--fs-1);font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.pill.booked{background:var(--teal-tint);color:var(--teal-ink)}
+.pill.checking{background:var(--amber-tint);color:var(--amber-ink)}
+.pill.full,.pill.closed{background:var(--card-2);color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--line)}
+.btn{font-weight:700;font-size:var(--fs-2);padding:8px 16px;border-radius:10px;border:1.5px solid var(--btn);background:var(--btn);color:var(--btn-ink);cursor:pointer;white-space:nowrap}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.danger{background:transparent;color:var(--red-ink);border-color:var(--red)}
+.btn.wide{width:100%}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+
+.pass{background:var(--pass-bg);color:var(--pass-ink);border-radius:16px;padding:14px 16px;display:flex;justify-content:space-between;gap:14px}
+.pass.open{box-shadow:0 0 0 3px var(--amber)}
+.pass .t{font-size:var(--fs-4);font-weight:700;line-height:1}
+.pass h3{font-size:var(--fs-3);margin-top:4px}
+.pass p{opacity:.9}
+.pass .btn{background:transparent;color:var(--pass-ink);border-color:currentColor;margin-top:12px}
+.qr{background:#fff;padding:6px;border-radius:8px;width:100px;height:100px;flex:none;display:grid;place-items:center;color:#0F2A3A;font-size:var(--fs-1);text-align:center}
+.qr img,.qr canvas{width:88px!important;height:88px!important}
+.pass-note{font-size:var(--fs-1);margin-top:8px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.14)}
+.section-title{font-family:'Big Shoulders Display','Atkinson Hyperlegible Next',sans-serif;font-weight:800;letter-spacing:.02em;font-size:var(--fs-3);line-height:1.1;margin:22px 0 8px}
+.section-title:first-child{margin-top:4px}
+.gone{padding:10px 12px;border-radius:12px;background:var(--card-2)}
+.gone b{display:block}
+.gone .t{font-size:var(--fs-3);font-weight:700;margin-right:6px}
+.inbox li{padding:8px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:52px minmax(0,1fr);gap:10px}
+.inbox .t{font-size:var(--fs-3);font-weight:700}
+.empty{text-align:center;padding:24px 8px;color:var(--ink-2)}
+
+.op-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.op-head h2,.scenes h2{font-family:'Big Shoulders Display','Atkinson Hyperlegible Next',sans-serif;font-weight:800;letter-spacing:.02em;font-size:var(--fs-4);line-height:1.1}
+.sub{color:var(--ink-2);max-width:60ch;margin-top:4px}
+select.box,input.box{border:1px solid var(--line);background:var(--card-2);border-radius:10px;padding:8px 12px;color:var(--ink);font-weight:400}
+.op-session{display:flex;gap:12px;align-items:baseline;margin-top:14px}
+.op-session .t{font-size:var(--fs-5);line-height:1;letter-spacing:0}
+.op-session b{font-size:var(--fs-3);display:block;line-height:1.2}
+.op-session .sub{font-size:var(--fs-1);margin-top:2px}
+.axis{display:flex;justify-content:space-between;font-size:var(--fs-1);color:var(--ink-2)}
+.picked-line{font-size:var(--fs-1);color:var(--ink-2);min-height:20px;margin:6px 0 2px}
+.field{display:grid;gap:6px;margin-top:14px;font-weight:700}
+.slider-row{display:flex;align-items:center;gap:12px;font-weight:400}
+.slider-row input{flex:1;accent-color:var(--teal)}
+.readout{font-size:var(--fs-5);line-height:1;min-width:2ch;text-align:right;letter-spacing:0}
+.preview{margin-top:10px;min-height:48px;max-width:60ch}
+.error{color:var(--red-ink);font-size:var(--fs-1);font-weight:400}
+.result{margin-top:10px;padding:8px 10px;border-radius:10px;background:var(--teal-tint);color:var(--teal-ink)}
+.result.bad{background:var(--red-tint);color:var(--red-ink)}
+.confirm{margin-top:10px;padding:10px 12px;border-radius:12px;border:1px solid var(--red);background:var(--red-tint);color:var(--red-ink)}
+.log li{display:grid;grid-template-columns:52px minmax(0,1fr);gap:10px;padding:8px 10px;border-radius:12px;background:var(--card-2);margin-top:8px}
+.log .t{font-size:var(--fs-3);font-weight:700;line-height:1.2}
+.log .why{color:var(--ink-2);font-size:var(--fs-1)}
+
+.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:12px}
+.stat{background:var(--card-2);border-radius:12px;padding:8px 10px;font-size:var(--fs-1);color:var(--ink-2)}
+.stat b{display:block;color:var(--ink);font-size:var(--fs-2)}
+.stat.warn{background:var(--amber-tint);color:var(--amber-ink)} .stat.warn b{color:var(--amber-ink)}
+.stat.bad{background:var(--red-tint);color:var(--red-ink)} .stat.bad b{color:var(--red-ink)}
+.blitz{margin-top:12px;padding:12px;border-radius:14px;border:1px solid var(--line)}
+.blitz p+p{margin-top:6px}
+.reqs li{display:grid;grid-template-columns:64px minmax(0,1fr);gap:2px 10px;font-size:var(--fs-1);padding:8px 10px;border-radius:12px;background:var(--card-2);margin-top:8px}
+.reqs .t{font-size:var(--fs-2);font-weight:700;line-height:1.3}
+.reqs .what{color:var(--ink);font-size:var(--fs-2)}
+.reqs .meta{color:var(--ink-2)}
+.chip{display:inline-block;font-weight:700;font-size:var(--fs-1);padding:1px 8px;border-radius:999px;margin-right:6px}
+.chip.ok{background:var(--teal-tint);color:var(--teal-ink)}
+.chip.no{background:var(--card);color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--line)}
+.chip.warn{background:var(--amber-tint);color:var(--amber-ink)}
+.chip.bad{background:var(--red-tint);color:var(--red-ink)}
+</style>
+</head>
+<body>
+<canvas id="floor" aria-hidden="true"></canvas>
+<div class="demo"><div class="in">
+  <span>Demo with made-up data. It runs in your browser, and nothing is saved.</span>
+  <label>You're <select id="swimmer" aria-label="Swimmer"></select></label>
+</div></div>
+
+<div class="hero" aria-hidden="true"><canvas id="water"></canvas></div>
+
+<div class="toolbar"><div class="in">
+  <div class="group">
+    <div class="seg" role="group" aria-label="Theme">
+      <button data-action="theme" data-value="device">Match device</button>
+      <button data-action="theme" data-value="light">Light</button>
+      <button data-action="theme" data-value="dark">Night pool</button>
+    </div>
+    <button class="tool" data-action="water" id="water-btn">Pause water</button>
+  </div>
+  <div class="group" aria-label="Try it">
+    <span class="group-label">Try it:</span>
+    <button class="tool" data-action="blitz" id="blitz-btn">30 bookings at once</button>
+    <button class="tool" data-action="lose" id="lose-btn">Lose a reply</button>
+    <button class="tool" data-action="dbdown" id="db-btn">Database down for 10 s</button>
+    <button class="tool" data-action="lock" id="lock-btn">Row lock: on</button>
+    <button class="tool" data-action="reset">Reset</button>
+  </div>
+</div></div>
+
+<main>
+  <section class="panel" aria-labelledby="app-title">
+    <div class="panel-head">
+      <div class="brand">
+        <h1 id="app-title" class="t wordmark">SwimSync</h1>
+        <div class="tabs" role="tablist" aria-label="Swimmer views">
+          <button role="tab" id="tab-sessions" data-action="tab" data-value="sessions" data-fid="tab-sessions">Sessions</button>
+          <button role="tab" id="tab-bookings" data-action="tab" data-value="bookings" data-fid="tab-bookings">Your bookings<span class="count" id="pass-count">0</span></button>
+        </div>
+      </div>
+      <div id="swimmer-head"></div>
+    </div>
+    <div class="panel-body" id="swimmer-body"></div>
+  </section>
+
+  <div class="right">
+    <section class="panel" aria-labelledby="op-title">
+      <div class="panel-head">
+        <div class="op-head">
+          <div>
+            <h2 id="op-title">Operator</h2>
+            <p class="sub">Change a session's capacity or close it. The real API needs the operator token for this.</p>
+          </div>
+          <select class="box" id="op-session" aria-label="Session to manage"></select>
+        </div>
+        <div id="op-summary"></div>
+        <div class="rope" id="op-rope" style="height:30px;margin-top:14px"></div>
+        <div class="axis"><span>Booked first</span><span>Booked last</span></div>
+        <p class="picked-line" id="op-picked">Tap a float to see who booked it.</p>
+      </div>
+      <div class="panel-body">
+        <div id="op-controls">
+          <div class="field">
+            <label for="op-slider">New capacity</label>
+            <div class="slider-row"><input type="range" id="op-slider" min="1" max="40" step="1"><span class="t readout" id="op-readout"></span></div>
+          </div>
+          <p class="preview" id="op-preview" aria-live="polite"></p>
+          <div class="field">
+            <label for="op-reason">Reason, for the change log</label>
+            <input class="box" id="op-reason" type="text" maxlength="200" placeholder="One lifeguard off sick">
+            <span class="error" id="op-error"></span>
+          </div>
+          <div class="btn-row">
+            <button class="btn" data-action="apply" id="op-apply"></button>
+            <button class="btn danger" data-action="close-ask">Close session</button>
+          </div>
+          <div id="op-confirm"></div>
+        </div>
+        <div id="op-closed"></div>
+        <div id="op-result" aria-live="polite"></div>
+        <h3 class="section-title">Change log</h3>
+        <ul class="log" id="op-log"></ul>
+      </div>
+    </section>
+
+    <section class="panel scenes" aria-labelledby="scenes-title">
+      <div class="panel-head">
+        <h2 id="scenes-title">Behind the scenes</h2>
+        <p class="sub">Every request the app sends, the key it carries and the answer it got. The 30 bookings test is summarised in one line.</p>
+        <div class="status-grid" id="scenes-status"></div>
+        <div id="blitz-result"></div>
+      </div>
+      <div class="panel-body"><ul class="reqs" id="reqs"></ul></div>
+    </section>
+  </div>
+</main>
+<p class="sr" id="announce" aria-live="polite"></p>
+
+<script>
+'use strict';
+
+// ---------- Small helpers ----------
+const $ = s => document.querySelector(s);
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const between = (a, b) => a + Math.random() * (b - a);
+const pad = n => String(n).padStart(2, '0');
+const clock = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+const hhmm = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const newKey = () => (self.crypto && crypto.randomUUID) ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+const store = {
+  get(k, d) { try { return localStorage.getItem('swimsync.demo.' + k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('swimsync.demo.' + k, v); } catch { /* private window: not remembered */ } },
+};
+
+// ---------- The pool's server, simulated ----------
+// The same rules as backend/app: every change to a session takes that session's lock, so "is there
+// room?" and "take a place" can't be split by another request.
+
+const CLIENT_TIMEOUT_MS = 4000;   // the app stops waiting after 4 s, as in frontend/src/api.ts
+const SESSIONS = [
+  { id: 1, time: '06:30', name: 'Early lanes', capacity: 24 },
+  { id: 2, time: '07:00', name: 'Morning lane swim', capacity: 20 },
+  { id: 3, time: '10:00', name: 'Aqua fit', capacity: 12 },
+  { id: 4, time: '12:30', name: 'Lunchtime swim', capacity: 10 },
+  { id: 5, time: '18:00', name: 'Evening family swim', capacity: 5 },
+  { id: 6, time: '20:30', name: 'Late lanes', capacity: 16 },
+];
+const POOL_MESSAGES = {
+  capacity_reduced: n => `Your booking for ${n} was cancelled because the pool reduced capacity. Book another session.`,
+  session_closed: n => `Your booking for ${n} was cancelled because the pool closed this session. Book another session.`,
+};
+const db = { sessions: [], bookings: [], keys: new Map(), outbox: [], inbox: [], audit: [] };
+const server = { rowLock: true, dbDownUntil: 0, loseNextReply: false };
+let nextBookingId = 1, nextOutboxId = 1, order = 0;
+
+const session = id => db.sessions.find(s => s.id === id);
+const confirmedIn = id => db.bookings.filter(b => b.sessionId === id && b.status === 'confirmed');
+const dbDown = () => Date.now() < server.dbDownUntil;
+
+const tails = new Map();
+async function withLock(sessionId, work) {
+  const before = tails.get(sessionId) || Promise.resolve();
+  let release;
+  const held = new Promise(r => (release = r));
+  tails.set(sessionId, before.then(() => held));
+  await before;
+  try { return await work(); } finally { release(); }
+}
+
+function queueNotice(swimmer, bookingId, kind, message) {
+  db.outbox.push({ id: nextOutboxId++, swimmer, bookingId, kind, message, status: 'pending' });
+}
+
+async function handleBook(sessionId, swimmer, key) {
+  if (dbDown()) return { status: 503, body: { error: 'database_unavailable', booked: false } };
+  const work = async () => {
+    const s = session(sessionId);
+    if (!s) return { status: 404, body: { error: 'session not found' } };
+    const seen = db.keys.get(swimmer + '|' + key);
+    if (seen) {
+      if (seen.sessionId !== sessionId) return { status: 422, body: { error: 'this Idempotency-Key was already used for a different session' } };
+      return { status: seen.status === 201 ? 200 : seen.status, body: seen.body };
+    }
+    const bookedWhenRead = s.booked;
+    await wait(between(3, 15));   // the gap between reading the count and writing; the lock keeps others out of it
+    let answer;
+    const mine = confirmedIn(sessionId).find(b => b.swimmer === swimmer);
+    if (mine) answer = { status: 409, body: { error: 'you already have a confirmed booking for this session', booking_id: mine.id } };
+    else if (s.status === 'closed') answer = { status: 409, body: { error: 'session is closed' } };
+    else if (bookedWhenRead >= s.capacity) answer = { status: 409, body: { error: 'session is full' } };
+    else {
+      // The database's own backstop, CHECK (booked <= capacity), sees the row as it is now. Nothing
+      // has been written yet, so refusing here leaves no trace, like a rolled-back transaction.
+      if (s.booked + 1 > s.capacity) return { status: 500, body: { error: 'internal error' }, refused: true };
+      const b = { id: nextBookingId++, sessionId, swimmer, status: 'confirmed', order: ++order, at: hhmm(), cancelReason: null };
+      db.bookings.push(b);
+      s.booked += 1;
+      queueNotice(swimmer, b.id, 'booking_confirmed', `Your booking for ${s.name} is confirmed.`);
+      answer = { status: 201, body: { booking_id: b.id, session_id: sessionId, status: 'confirmed' } };
+    }
+    db.keys.set(swimmer + '|' + key, { sessionId, status: answer.status, body: answer.body });
+    return answer;
+  };
+  return server.rowLock ? withLock(sessionId, work) : work();
+}
+
+async function handleCancel(bookingId, swimmer) {
+  if (dbDown()) return { status: 503, body: { error: 'database_unavailable', cancelled: false } };
+  const b = db.bookings.find(x => x.id === bookingId && x.swimmer === swimmer);
+  if (!b) return { status: 404, body: { error: 'booking not found' } };
+  return withLock(b.sessionId, async () => {
+    await wait(between(3, 10));
+    if (b.status === 'cancelled') return { status: 200, body: { booking_id: b.id, status: 'cancelled', already_cancelled: true } };
+    const s = session(b.sessionId);
+    b.status = 'cancelled';
+    b.cancelReason = 'swimmer';
+    s.booked -= 1;
+    queueNotice(swimmer, b.id, 'booking_cancelled', `Your booking for ${s.name} is cancelled.`);
+    return { status: 200, body: { booking_id: b.id, status: 'cancelled', already_cancelled: false } };
+  });
+}
+
+function cancelByPool(s, rows, reason) {
+  for (const b of rows) {
+    b.status = 'cancelled';
+    b.cancelReason = reason;
+    queueNotice(b.swimmer, b.id, 'booking_cancelled_by_pool', POOL_MESSAGES[reason](s.name));
+  }
+  return rows.map(b => b.id);
+}
+
+async function handleSetCapacity(sessionId, capacity, reason, at = hhmm()) {
+  if (dbDown()) return { status: 503, body: { error: 'database_unavailable', changed: false } };
+  return withLock(sessionId, async () => {
+    await wait(between(3, 10));
+    const s = session(sessionId);
+    if (s.status === 'closed') return { status: 409, body: { error: 'session is closed' } };
+    if (capacity === s.capacity) return { status: 200, body: { session_id: sessionId, capacity, changed: false, cancelled_booking_ids: [] } };
+    // Too many bookings for the new capacity: the most recent ones lose their place first.
+    const excess = Math.max(0, s.booked - capacity);
+    const losing = confirmedIn(sessionId).sort((a, b) => b.order - a.order).slice(0, excess);
+    const ids = cancelByPool(s, losing, 'capacity_reduced');
+    const before = { capacity: s.capacity, booked: s.booked };
+    s.capacity = capacity;
+    s.booked -= ids.length;   // with capacity, in one step, so booked never exceeds capacity
+    db.audit.unshift({ at, action: 'capacity_changed', sessionId, reason, before, after: { capacity, booked: s.booked }, affected: ids });
+    return { status: 200, body: { session_id: sessionId, capacity, changed: true, cancelled_booking_ids: ids } };
+  });
+}
+
+async function handleClose(sessionId, reason, at = hhmm()) {
+  if (dbDown()) return { status: 503, body: { error: 'database_unavailable', changed: false } };
+  return withLock(sessionId, async () => {
+    await wait(between(3, 10));
+    const s = session(sessionId);
+    if (s.status === 'closed') return { status: 200, body: { session_id: sessionId, status: 'closed', changed: false, cancelled_booking_ids: [] } };
+    const ids = cancelByPool(s, confirmedIn(sessionId).sort((a, b) => a.order - b.order), 'session_closed');
+    const before = { status: 'open', booked: s.booked };
+    s.status = 'closed';
+    s.booked = 0;
+    db.audit.unshift({ at, action: 'session_closed', sessionId, reason, before, after: { status: 'closed', booked: 0 }, affected: ids });
+    return { status: 200, body: { session_id: sessionId, status: 'closed', changed: true, cancelled_booking_ids: ids } };
+  });
+}
+
+function readSessions() {
+  if (dbDown()) return { status: 503, body: { error: 'database_unavailable' } };
+  return { status: 200, body: db.sessions.map(s => ({ id: s.id, time: s.time, name: s.name, capacity: s.capacity, remaining: s.capacity - s.booked, status: s.status })) };
+}
+function readMyBookings(swimmer) {
+  if (dbDown()) return { status: 503, body: { error: 'database_unavailable' } };
+  return {
+    status: 200,
+    body: db.bookings.filter(b => b.swimmer === swimmer).sort((a, b) => b.order - a.order).map(b => {
+      const s = session(b.sessionId);
+      return { booking_id: b.id, session_id: b.sessionId, session_name: s.name, time: s.time, status: b.status, cancel_reason: b.cancelReason };
+    }),
+  };
+}
+function readNotices(swimmer) {
+  if (dbDown()) return { status: 503, body: { error: 'database_unavailable' } };
+  return { status: 200, body: db.inbox.filter(n => n.swimmer === swimmer).slice().reverse() };
+}
+
+// The outbox worker: delivers pending notices outside any booking transaction, and simply waits
+// while the database is down.
+const worker = { delivered: 0, lastError: null };
+setInterval(() => {
+  if (dbDown()) { worker.lastError = 'waiting for the database'; renderScenes(); return; }
+  worker.lastError = null;
+  const due = db.outbox.filter(o => o.status === 'pending').slice(0, 25);
+  for (const o of due) {
+    o.status = 'delivered';
+    worker.delivered += 1;
+    db.inbox.push({ outboxId: o.id, swimmer: o.swimmer, message: o.message, at: hhmm() });
+  }
+  if (due.length) {
+    renderScenes();
+    if (due.some(o => o.swimmer === app.swimmer)) refresh();
+  }
+}, 1500);
+
+function seed() {
+  db.sessions = SESSIONS.map(s => ({ ...s, booked: 0, status: 'open' }));
+  db.bookings = []; db.keys = new Map(); db.outbox = []; db.inbox = []; db.audit = [];
+  nextBookingId = 1; nextOutboxId = 1; order = 0; worker.delivered = 0;
+  const regulars = Array.from({ length: 12 }, (_, i) => `swimmer-${pad(i + 1)}`).filter(w => w !== 'swimmer-07');
+  const plan = { 1: 9, 2: 8, 3: 6, 4: 9, 5: 5, 6: 4 };
+  for (const [sid, count] of Object.entries(plan)) {
+    const id = +sid, s = session(id);
+    const who = regulars.slice(id).concat(regulars.slice(0, id)).slice(0, count);
+    if (id === 2) who[2] = 'swimmer-07';
+    if (id === 6) who[1] = 'swimmer-07';
+    for (const w of who) {
+      const b = { id: nextBookingId++, sessionId: id, swimmer: w, status: 'confirmed', order: ++order, at: '', cancelReason: null };
+      db.bookings.push(b);
+      s.booked += 1;
+      queueNotice(w, b.id, 'booking_confirmed', `Your booking for ${s.name} is confirmed.`);
+    }
+  }
+  const now = Date.now(), minutesAgo = m => hhmm(new Date(now - m * 60000));
+  for (const b of db.bookings) b.at = minutesAgo(40 + (order - b.order) * 3);
+  // Two operator changes from earlier this morning, made through the same rules as the panel.
+  const s1 = session(1);
+  s1.capacity = 20;
+  handleSetCapacity(1, 24, 'Extra lifeguard on shift', minutesAgo(32)).then(() => (s1.capacity = 24));
+  handleClose(6, 'Pool maintenance', minutesAgo(20));
+  // Everything seeded counts as already delivered.
+  setTimeout(() => {
+    for (const o of db.outbox) if (o.status === 'pending') {
+      o.status = 'delivered';
+      worker.delivered += 1;
+      db.inbox.push({ outboxId: o.id, swimmer: o.swimmer, message: o.message, at: minutesAgo(o.kind === 'booking_confirmed' ? 38 : 19) });
+    }
+  }, 60);
+}
+
+// ---------- The network between the app and the server ----------
+const requests = [];
+function logRequest(entry) {
+  requests.unshift(entry);
+  if (requests.length > 40) requests.length = 40;
+}
+
+async function send(what, who, key, handler, { quiet = false, canLose = false, latency = [40, 140] } = {}) {
+  const entry = { at: clock(), what, who, key, answer: null, ms: null, lost: false, serverSaid: null };
+  if (!quiet) { logRequest(entry); renderScenes(); }
+  const t0 = performance.now();
+  const lose = canLose && server.loseNextReply;
+  if (lose) { server.loseNextReply = false; renderToolbar(); }
+  const roundTrip = (async () => {
+    await wait(between(latency[0], latency[1]));
+    const r = await handler();
+    await wait(between(30, 110));
+    return r;
+  })();
+  let answer;
+  if (lose) {
+    // The server does the work and answers, but the answer never reaches the app.
+    roundTrip.then(r => { entry.serverSaid = r.status; renderScenes(); });
+    await wait(CLIENT_TIMEOUT_MS);
+    answer = { status: null, error: 'timeout' };
+    entry.lost = true;
+  } else {
+    answer = await Promise.race([roundTrip, wait(CLIENT_TIMEOUT_MS).then(() => ({ status: null, error: 'timeout' }))]);
+  }
+  entry.answer = answer;
+  entry.ms = Math.round(performance.now() - t0);
+  if (!quiet) renderScenes();
+  return answer;
+}
+
+const api = {
+  sessions: () => send('Read sessions', null, null, async () => readSessions(), { quiet: true }),
+  myBookings: (swimmer, quiet = true) => send('Read your bookings', swimmer, null, async () => readMyBookings(swimmer), { quiet }),
+  notices: swimmer => send('Read notices', swimmer, null, async () => readNotices(swimmer), { quiet: true }),
+};
+
+// ---------- The swimmer's app ----------
+// The Book and Cancel rules from frontend/src/bookingFlow.ts: never say "booked" or "not booked"
+// without evidence, and retry an uncertain answer with the same key.
+
+const app = {
+  swimmer: store.get('swimmer', 'swimmer-07'),
+  tab: 'sessions',
+  view: [], viewAt: null, viewStale: false,
+  mine: [], notices: [],
+  flows: {}, cancels: {},
+  passOpen: null,
+  selected: 4, preview: null, picked: null, confirmClose: false, opResult: null, opError: '',
+  blitz: null, theme: store.get('theme', 'device'), waterPaused: store.get('water', 'on') === 'off',
+};
+const UNAVAILABLE_RETRIES = 2;
+const UNKNOWN_DELAYS_MS = [1000, 2000, 4000];
+
+function classify(a) {
+  if (a.status === null) return 'unknown';
+  const { status, body } = a;
+  if ((status === 200 || status === 201) && body && body.booking_id != null) return 'confirmed';
+  if (status === 409 && body && body.booking_id != null) return 'already';
+  if (status === 409 && body && body.error === 'session is full') return 'full';
+  if (status === 409 && body && body.error === 'session is closed') return 'closed';
+  if (status === 409) return 'unknown';
+  if (status === 503 && body && body.error === 'database_unavailable') return 'unavailable';
+  if (status >= 500) return 'unknown';
+  return 'error';
+}
+
+const flowId = (swimmer, sessionId) => `${swimmer}|${sessionId}`;
+const TRANSIENT = ['confirmed', 'already', 'full', 'closed', 'not_booked', 'error'];
+function flowFor(sessionId) {
+  const f = app.flows[flowId(app.swimmer, sessionId)];
+  if (!f) return null;
+  if (TRANSIENT.includes(f.kind) && Date.now() - f.at > 12000) return null;
+  return f;
+}
+
+async function book(sessionId, resumeKey) {
+  const swimmer = app.swimmer, id = flowId(swimmer, sessionId), s = session(sessionId);
+  const key = resumeKey || newKey();
+  const shown = app.view.find(v => v.id === sessionId);
+  const set = st => { app.flows[id] = { ...st, key, at: Date.now() }; renderSwimmer(); };
+  const post = () => send(`Book ${s.name}`, swimmer, key, () => handleBook(sessionId, swimmer, key), { canLose: true });
+  set({ kind: 'booking' });
+  let answer = await post(), unavailable = 0, unknown = 0, uncertain = false, done;
+  for (;;) {
+    const v = classify(answer), how = unavailable + unknown === 0 ? 'first try' : 'retry';
+    if (v === 'confirmed') { done = { kind: 'confirmed', how }; break; }
+    if (v === 'already') { done = { kind: 'already' }; break; }
+    if (v === 'full') { done = { kind: 'full', raced: !!shown && shown.remaining > 0 }; break; }
+    if (v === 'closed') { done = { kind: 'closed' }; break; }
+    if (v === 'error') { done = { kind: 'error' }; break; }
+    if (v === 'unavailable' && !uncertain) {
+      if (unavailable < UNAVAILABLE_RETRIES) { unavailable++; await wait(1000); answer = await post(); continue; }
+      done = { kind: 'not_booked' }; break;   // every attempt definitely rolled back
+    }
+    // Unknown, or "unavailable" after an earlier unknown: the first attempt may have saved it.
+    uncertain = true;
+    if (unknown < UNKNOWN_DELAYS_MS.length) {
+      set({ kind: 'checking', attempt: unknown + 1 });
+      await wait(UNKNOWN_DELAYS_MS[unknown]);
+      unknown++;
+      answer = await post();
+      continue;
+    }
+    const m = await api.myBookings(swimmer, false);
+    const found = m.status === 200 && m.body.find(b => b.session_id === sessionId && b.status === 'confirmed');
+    done = found ? { kind: 'confirmed', how: 'found in your bookings' } : { kind: 'unknown', reachable: m.status === 200 };
+    break;
+  }
+  set(done);
+  if (done.kind === 'confirmed') bubblesBeside(document.querySelector(`.session [data-sid="${sessionId}"]`)?.closest('.session') || $('#swimmer-body'), 22, 500);
+  announce(`${s.name}: ${cardModel(app.view.find(v => v.id === sessionId) || s).line}`);
+  await refresh();
+}
+
+async function cancelBooking(bookingId) {
+  const swimmer = app.swimmer;
+  const set = st => { app.cancels[bookingId] = st; renderSwimmer(); };
+  const post = () => send(`Cancel booking ${bookingId}`, swimmer, null, () => handleCancel(bookingId, swimmer));
+  set({ kind: 'cancelling' });
+  let answer = await post(), unavailable = 0, unknown = 0, uncertain = false;
+  for (;;) {
+    if (answer.status === 200) { set({ kind: 'cancelled' }); break; }
+    if (answer.status === 404) { set({ kind: 'error' }); break; }
+    const definitelyNot = answer.status === 503 && answer.body && answer.body.error === 'database_unavailable';
+    if (definitelyNot && !uncertain) {
+      if (unavailable < UNAVAILABLE_RETRIES) { unavailable++; await wait(1000); answer = await post(); continue; }
+      set({ kind: 'not_cancelled' }); break;
+    }
+    uncertain = true;
+    if (unknown < UNKNOWN_DELAYS_MS.length) { set({ kind: 'checking' }); await wait(UNKNOWN_DELAYS_MS[unknown]); unknown++; answer = await post(); continue; }
+    const m = await api.myBookings(swimmer, false);
+    const row = m.status === 200 && m.body.find(b => b.booking_id === bookingId);
+    set({ kind: row && row.status === 'cancelled' ? 'cancelled' : 'unknown' });
+    break;
+  }
+  announce(app.cancels[bookingId].kind === 'cancelled' ? 'Booking cancelled.' : 'The cancel is not confirmed yet.');
+  await refresh();
+}
+
+async function refresh() {
+  const swimmer = app.swimmer;
+  const [s, m, n] = await Promise.all([api.sessions(), api.myBookings(swimmer), api.notices(swimmer)]);
+  if (swimmer !== app.swimmer) return;
+  if (s.status === 200) { app.view = s.body; app.viewAt = clock(); app.viewStale = false; } else app.viewStale = true;
+  if (m.status === 200) app.mine = m.body;
+  if (n.status === 200) app.notices = n.body;
+  renderSwimmer();
+  renderOperator();
+}
+
+// ---------- Rendering: the swimmer's app ----------
+const zone = cap => Math.max(1, Math.round(cap * 0.2));
+
+function swimmerBeads(v, mineConfirmed, pending) {
+  const cap = v.capacity, booked = v.capacity - v.remaining;
+  let others = Math.min(booked - (mineConfirmed ? 1 : 0), pending ? cap - 1 : cap);
+  const out = [];
+  for (let i = 0; i < cap; i++) {
+    const red = i >= cap - zone(cap) ? ' red' : '';
+    if (i === 0 && pending) out.push('<span class="b chk"></span>');
+    else if (i === 0 && mineConfirmed) out.push('<span class="b you"></span>');
+    else if (others > 0) { out.push(`<span class="b on${red}"></span>`); others--; }
+    else out.push(`<span class="b${red}"></span>`);
+  }
+  return out.join('') + '<span class="wall"></span>';
+}
+
+function cardModel(v) {
+  const flow = flowFor(v.id);
+  const mineB = app.mine.find(b => b.session_id === v.id && b.status === 'confirmed');
+  const poolCut = !mineB && app.mine.find(b => b.session_id === v.id && b.status === 'cancelled' && b.cancel_reason && b.cancel_reason !== 'swimmer');
+  const left = v.remaining;
+  const placesLeft = left === 1 ? '1 place left.' : `${left} of ${v.capacity} places left.`;
+  const m = { pill: null, line: '', tone: '', action: null, pending: false, mine: !!mineB };
+  if (flow && flow.kind === 'booking') { m.pill = ['checking', 'Booking']; m.line = 'Booking your place…'; m.pending = true; return m; }
+  if (flow && flow.kind === 'checking') { m.pill = ['checking', 'Checking']; m.line = "Not confirmed yet. Checking with the pool. Trying again can't book you twice."; m.tone = 'checking'; m.pending = true; return m; }
+  if (flow && flow.kind === 'unknown' && !mineB) {
+    m.pill = ['checking', 'Not confirmed'];
+    m.line = flow.reachable ? "We couldn't confirm it yet, and there's no booking on record so far. Checking again can't book you twice."
+                            : "We couldn't confirm it yet, and couldn't reach your bookings either. Checking again can't book you twice.";
+    m.tone = 'checking'; m.action = ['check', 'Check again']; return m;
+  }
+  if (mineB || (flow && flow.kind === 'confirmed')) {
+    m.mine = true;
+    m.pill = ['booked', 'Booked'];
+    const how = flow && flow.kind === 'confirmed' && flow.how;
+    m.line = how === 'retry' ? "You're booked. The first answer didn't arrive, so the app asked again with the same request and the pool confirmed it."
+           : how === 'found in your bookings' ? "You're booked. The pool never answered in time, so the app checked your bookings and found it."
+           : `You're booked. ${placesLeft}`;
+    m.tone = how && how !== 'first try' ? 'good' : '';
+    m.action = ['pass', 'Show your pass'];
+    return m;
+  }
+  if (v.status === 'closed') {
+    m.pill = ['closed', 'Closed'];
+    m.line = poolCut ? 'Closed by the pool. Your booking was cancelled and you were sent a notice.' : 'Closed by the pool.';
+    return m;
+  }
+  const prefix = poolCut ? 'The pool reduced capacity and your booking was cancelled. ' : '';
+  if (flow && flow.kind === 'full' && flow.raced) { m.pill = ['full', 'Full']; m.line = 'That last place just went. Someone booked it a moment before you.'; m.tone = 'warn'; return m; }
+  if (left <= 0) { m.pill = ['full', 'Full']; m.line = prefix + 'Full. A place opens if someone cancels.'; return m; }
+  m.action = ['book', 'Book'];
+  if (flow && flow.kind === 'not_booked') { m.line = "You're not booked. The pool's system didn't answer, and nothing was saved. Try again in a moment."; m.tone = 'warn'; return m; }
+  if (flow && flow.kind === 'error') { m.line = "Something's wrong with this request, so nothing was booked."; m.tone = 'warn'; return m; }
+  m.line = prefix + placesLeft;
+  return m;
+}
+
+function sessionCard(v) {
+  const m = cardModel(v);
+  const btn = !m.action ? '' : m.action[0] === 'book'
+    ? `<button class="btn" data-action="book" data-sid="${v.id}" data-fid="book-${v.id}">${m.action[1]}</button>`
+    : m.action[0] === 'check'
+      ? `<button class="btn" data-action="check" data-sid="${v.id}" data-fid="check-${v.id}">${m.action[1]}</button>`
+      : `<button class="btn ghost" data-action="pass" data-sid="${v.id}" data-fid="pass-${v.id}">${m.action[1]}</button>`;
+  const rope = v.status === 'closed' ? '' :
+    `<button class="rope-btn" data-action="select" data-sid="${v.id}" data-fid="rope-${v.id}" aria-label="Open ${esc(v.name)} in the operator panel"><div class="rope" aria-hidden="true">${swimmerBeads(v, m.mine, m.pending)}</div></button>`;
+  return `<article class="session${v.status === 'closed' ? ' closed' : ''}${v.id === app.selected ? ' selected' : ''}">
+    <div class="s-top"><span class="t time">${v.time}</span><h3 class="s-name">${esc(v.name)}</h3>${m.pill ? `<span class="pill ${m.pill[0]}">${m.pill[1]}</span>` : ''}</div>
+    ${rope}
+    <div class="s-foot"><p class="line ${m.tone}">${esc(m.line)}</p>${btn}</div>
+  </article>`;
+}
+
+function renderSwimmerHead() {
+  const asof = app.viewAt ? (app.viewStale ? `Couldn't refresh. Places as of ${app.viewAt}` : `Places as of ${app.viewAt}`) : 'Loading places…';
+  $('#swimmer-head').innerHTML = app.tab === 'sessions' ? `
+    <div class="dayrow"><h2 class="t day">Tomorrow</h2><span class="asof${app.viewStale ? ' stale' : ''}">${asof}</span></div>
+    <div class="legend" aria-label="What the floats mean">
+      <span><i class="b on"></i>Booked</span><span><i class="b"></i>Free</span><span><i class="b you"></i>Yours</span>
+      <span><i class="b chk"></i>Checking</span><span><i class="b red"></i>Last places</span>
+    </div>
+    <p class="hint">Each float is one place. Tap a rope to manage that session.</p>` : `
+    <div class="dayrow"><h2 class="t day">Tomorrow</h2><span class="asof">Bookings for ${esc(app.swimmer)}</span></div>`;
+}
+
+function passCard(b) {
+  const st = app.cancels[b.booking_id];
+  const busy = st && (st.kind === 'cancelling' || st.kind === 'checking');
+  const note = !st ? '' : {
+    cancelling: '', checking: "Not sure the cancel went through. Checking; repeating it is safe.",
+    not_cancelled: "Couldn't reach the pool's system. Your booking is still confirmed.",
+    unknown: "We couldn't confirm the cancel yet. Check again in a moment.", error: "That booking wasn't found.", cancelled: '',
+  }[st.kind];
+  return `<article class="pass${app.passOpen === b.booking_id ? ' open' : ''}" id="pass-${b.booking_id}">
+    <div>
+      <span class="t">${b.time}</span>
+      <h3>${esc(b.session_name)}</h3>
+      <p>Tomorrow. Booking ${b.booking_id} for ${esc(app.swimmer)}.</p>
+      <p>Show this at the desk.</p>
+      ${note ? `<p class="pass-note">${esc(note)}</p>` : ''}
+      <button class="btn" data-action="cancel" data-bid="${b.booking_id}" data-fid="cancel-${b.booking_id}">${busy ? (st.kind === 'checking' ? 'Checking…' : 'Cancelling…') : 'Cancel booking'}</button>
+    </div>
+    <div class="qr" data-qr="SWIMSYNC-BOOKING-${b.booking_id}">Booking ${b.booking_id}</div>
+  </article>`;
+}
+
+const CANCELLED_BECAUSE = {
+  swimmer: 'You cancelled this booking.',
+  capacity_reduced: 'Cancelled by the pool: capacity was reduced.',
+  session_closed: 'Cancelled by the pool: the session was closed.',
+};
+
+function renderBookings() {
+  const live = app.mine.filter(b => b.status === 'confirmed');
+  const gone = app.mine.filter(b => b.status === 'cancelled');
+  const passes = live.length ? `<div class="list">${live.map(passCard).join('')}</div>`
+    : `<div class="empty"><p>You have no bookings for tomorrow.</p><div class="btn-row" style="justify-content:center"><button class="btn" data-action="tab" data-value="sessions" data-fid="see-sessions">See sessions</button></div></div>`;
+  const cancelled = gone.length ? `<h3 class="section-title">Cancelled</h3><div class="list">${gone.map(b =>
+    `<div class="gone"><b><span class="t">${b.time}</span> ${esc(b.session_name)}</b>${CANCELLED_BECAUSE[b.cancel_reason] || 'Cancelled.'}</div>`).join('')}</div>` : '';
+  const inbox = `<h3 class="section-title">Notices</h3>${app.notices.length
+    ? `<ul class="inbox">${app.notices.map(n => `<li><span class="t">${n.at}</span><span>${esc(n.message)}</span></li>`).join('')}</ul>`
+    : '<p class="sub">No notices yet. Confirmations and pool changes show up here.</p>'}`;
+  return `<h3 class="section-title">Swim passes</h3>${passes}${cancelled}${inbox}`;
+}
+
+function drawQRs() {
+  if (!window.QRCode) return;
+  document.querySelectorAll('.qr[data-qr]').forEach(el => {
+    if (el.dataset.drawn) return;
+    el.textContent = '';
+    try { new QRCode(el, { text: el.dataset.qr, width: 88, height: 88, colorDark: '#0F2A3A', colorLight: '#FFFFFF' }); el.dataset.drawn = '1'; }
+    catch { el.textContent = el.dataset.qr.replace('SWIMSYNC-BOOKING-', 'Booking '); }
+  });
+}
+
+function keepFocus(fn) {
+  const fid = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.fid : null;
+  fn();
+  if (fid) { const el = document.querySelector(`[data-fid="${fid}"]`); if (el && el !== document.activeElement) el.focus({ preventScroll: true }); }
+}
+
+function renderSwimmer() {
+  keepFocus(() => {
+    $('#tab-sessions').setAttribute('aria-selected', app.tab === 'sessions');
+    $('#tab-bookings').setAttribute('aria-selected', app.tab === 'bookings');
+    $('#pass-count').textContent = app.mine.filter(b => b.status === 'confirmed').length;
+    renderSwimmerHead();
+    $('#swimmer-body').innerHTML = app.tab === 'sessions'
+      ? `<div class="list">${app.view.map(sessionCard).join('')}</div>`
+      : renderBookings();
+  });
+  if (app.tab === 'bookings') drawQRs();
+}
+
+// ---------- Rendering: operator ----------
+function renderOperator() {
+  const s = session(app.selected);
+  if (!s) return;
+  const booked = confirmedIn(s.id).sort((a, b) => a.order - b.order);
+  const target = app.preview ?? s.capacity;
+  $('#op-session').value = String(s.id);
+  $('#op-summary').innerHTML = `<div class="op-session"><span class="t">${s.time}</span><div><b>${esc(s.name)}</b>
+    <span class="sub">${s.status === 'closed' ? 'Closed' : `${booked.length} booked of ${s.capacity} places`}</span></div></div>`;
+
+  // The rope in booking order. The wall sits at the new capacity; floats past it lose their place.
+  const beads = [];
+  const slots = Math.max(target, booked.length);
+  for (let i = 0; i < slots; i++) {
+    if (i === target) beads.push('<span class="wall"></span>');
+    const red = i < target && i >= target - zone(target) ? ' red' : '';
+    if (i < booked.length) {
+      const b = booked[i], lose = i >= target;
+      beads.push(`<button class="b ${lose ? 'lose' : 'on' + red}${app.picked === b.id ? ' picked' : ''}" data-action="bead" data-bid="${b.id}" data-fid="bead-${b.id}"
+        aria-label="${esc(b.swimmer)}, booked at ${b.at}${lose ? ', loses their place in this change' : ''}"></button>`);
+    } else beads.push(`<span class="b${red}"></span>`);
+  }
+  if (target >= slots) beads.push('<span class="wall"></span>');
+  keepFocus(() => { $('#op-rope').innerHTML = s.status === 'closed' ? '' : beads.join(''); });
+
+  const pickedB = app.picked && db.bookings.find(b => b.id === app.picked);
+  $('#op-picked').textContent = pickedB && pickedB.sessionId === s.id && pickedB.status === 'confirmed'
+    ? `${pickedB.swimmer}, booked at ${pickedB.at} (booking ${pickedB.id}).${booked.indexOf(pickedB) >= target ? ' Loses their place in this change.' : ''}`
+    : 'Tap a float to see who booked it.';
+
+  const closed = s.status === 'closed';
+  $('#op-controls').hidden = closed;
+  $('#op-closed').innerHTML = closed ? '<p class="result">This session is closed. A closed session takes no bookings and can\'t be changed.</p>' : '';
+  if (!closed) {
+    const slider = $('#op-slider');
+    if (document.activeElement !== slider) slider.value = target;
+    $('#op-readout').textContent = target;
+    const n = Math.max(0, booked.length - target);
+    const losing = booked.slice(booked.length - n).reverse().map(b => b.swimmer);
+    $('#op-preview').textContent = target === s.capacity ? 'Drag the slider to choose a new capacity.'
+      : n === 0 ? (target > s.capacity ? 'Raising capacity cancels nobody and brings nobody back.' : 'Still room for everyone booked. Nobody loses their place.')
+      : `The ${n === 1 ? 'newest booking loses its' : `${n} newest bookings lose their`} place: ${losing.join(', ')}. Each swimmer gets a notice saying the pool reduced capacity.`;
+    $('#op-apply').textContent = target === s.capacity ? 'No change' : n ? `Cut to ${target} and cancel ${plural(n, 'booking', 'bookings')}` : `Change to ${target} places`;
+    $('#op-error').textContent = app.opError;
+    $('#op-confirm').innerHTML = app.confirmClose ? `<div class="confirm">
+      <p>Close ${esc(s.name)} and cancel ${booked.length ? `all ${plural(booked.length, 'booking', 'bookings')}` : 'it'}? ${booked.length ? 'Each swimmer gets a notice.' : 'Nobody is booked.'}</p>
+      <div class="btn-row"><button class="btn danger" data-action="close-confirm" data-fid="close-confirm">Close session</button>
+      <button class="btn ghost" data-action="close-keep" data-fid="close-keep">Keep it open</button></div></div>` : '';
+  }
+  $('#op-result').innerHTML = app.opResult ? `<p class="result${app.opResult.bad ? ' bad' : ''}">${esc(app.opResult.text)}</p>` : '';
+  $('#op-log').innerHTML = db.audit.map(auditLine).join('') || '<li><span></span><span class="sub">No changes yet.</span></li>';
+}
+
+function auditLine(e) {
+  const s = session(e.sessionId);
+  const who = e.affected.map(id => (db.bookings.find(b => b.id === id) || {}).swimmer).filter(Boolean);
+  const affected = who.length ? `${plural(who.length, 'booking', 'bookings')} cancelled: ${who.join(', ')}.` : 'Nobody affected.';
+  const what = e.action === 'session_closed' ? `Closed ${s.name}. ${affected}` : `${s.name}: ${e.before.capacity} to ${e.after.capacity} places. ${affected}`;
+  return `<li><span class="t">${e.at}</span><span>${esc(what)}<br><span class="why">Reason: ${esc(e.reason)}</span></span></li>`;
+}
+
+async function applyCapacity() {
+  const s = session(app.selected), target = app.preview ?? s.capacity, reason = $('#op-reason').value.trim();
+  if (target === s.capacity) { app.opError = 'Choose a different capacity first.'; renderOperator(); return; }
+  if (!reason) { app.opError = 'Enter a reason. It goes in the change log.'; renderOperator(); $('#op-reason').focus(); return; }
+  app.opError = ''; app.opResult = { text: 'Saving…' }; renderOperator();
+  const a = await send(`Change ${s.name} to ${target} places`, 'operator', null, () => handleSetCapacity(s.id, target, reason));
+  app.opResult = opOutcome(a, s, () => {
+    const ids = a.body.cancelled_booking_ids;
+    return `Done. ${s.name} now has ${target} places.` + (ids.length ? ` ${plural(ids.length, 'booking', 'bookings')} cancelled; the notices are in the outbox.` : ' Nobody lost their place.');
+  });
+  if (a.status === 200) { app.preview = null; $('#op-reason').value = ''; ringFrom($('#op-title').closest('.panel')); }
+  renderOperator(); refresh();
+}
+
+async function closeSession() {
+  const s = session(app.selected), reason = $('#op-reason').value.trim();
+  if (!reason) { app.opError = 'Enter a reason before closing. It goes in the change log.'; app.confirmClose = false; renderOperator(); $('#op-reason').focus(); return; }
+  app.confirmClose = false; app.opError = ''; app.opResult = { text: 'Closing…' }; renderOperator();
+  const a = await send(`Close ${s.name}`, 'operator', null, () => handleClose(s.id, reason));
+  app.opResult = opOutcome(a, s, () => `Closed ${s.name}. ${plural(a.body.cancelled_booking_ids.length, 'booking', 'bookings')} cancelled; the notices are in the outbox.`);
+  if (a.status === 200) { app.preview = null; $('#op-reason').value = ''; ringFrom($('#op-title').closest('.panel')); }
+  renderOperator(); refresh();
+}
+
+function opOutcome(a, s, ok) {
+  if (a.status === 200) return { text: a.body.changed === false ? 'Nothing to change.' : ok() };
+  if (a.status === 503) return { bad: true, text: 'Not changed. The database is unavailable, and nothing was saved. Try again in a moment.' };
+  if (a.status === 409) return { bad: true, text: `${s.name} is closed, so it can't be changed.` };
+  return { bad: true, text: 'No answer. Check the change log before trying again; repeating the same change is safe.' };
+}
+
+// ---------- Rendering: behind the scenes ----------
+function answerChip(e) {
+  const a = e.answer;
+  if (!a) return '<span class="chip no">waiting…</span>';
+  if (a.status === null) return `<span class="chip warn">no reply after ${CLIENT_TIMEOUT_MS / 1000} s</span>`;
+  const err = a.body && a.body.error;
+  if (a.status === 201) return '<span class="chip ok">201 booked</span>';
+  if (a.status === 200) return `<span class="chip ok">200 ${e.what.startsWith('Book') ? 'the stored answer' : 'done'}</span>`;
+  if (a.status === 409) return `<span class="chip no">409 ${err === 'session is full' ? 'full' : err === 'session is closed' ? 'closed' : 'already booked'}</span>`;
+  if (a.status === 503) return '<span class="chip warn">503 database unavailable</span>';
+  if (a.status === 500) return '<span class="chip bad">500 refused by the database</span>';
+  return `<span class="chip bad">${a.status}</span>`;
+}
+
+function renderScenes() {
+  const pending = db.outbox.filter(o => o.status === 'pending').length;
+  const downFor = Math.ceil((server.dbDownUntil - Date.now()) / 1000);
+  $('#scenes-status').innerHTML = `
+    <div class="stat${server.rowLock ? '' : ' bad'}"><b>Row lock ${server.rowLock ? 'on' : 'off'}</b>${server.rowLock ? 'Bookings for a session take turns.' : 'Only the CHECK constraint guards capacity.'}</div>
+    <div class="stat${downFor > 0 ? ' warn' : ''}"><b>Database ${downFor > 0 ? `down, ${downFor} s left` : 'up'}</b>${downFor > 0 ? 'Every request gets 503.' : 'Answering normally.'}</div>
+    <div class="stat${server.loseNextReply ? ' warn' : ''}"><b>Next reply ${server.loseNextReply ? 'will be lost' : 'arrives'}</b>${server.loseNextReply ? 'The next booking is saved but its answer is dropped.' : 'Answers reach the app.'}</div>
+    <div class="stat${worker.lastError ? ' warn' : ''}"><b>Outbox: ${pending} waiting</b>${worker.lastError ? 'The worker is waiting for the database.' : `${worker.delivered} notices delivered.`}</div>`;
+  const B = app.blitz;
+  $('#blitz-result').innerHTML = !B ? '' : B.running ? `<div class="blitz"><p>Sending 30 bookings for ${esc(B.name)} at the same moment…</p></div>` : `<div class="blitz">
+    <p><b>30 bookings at once for ${esc(B.name)}</b>, row lock ${B.lock ? 'on' : 'off'}, ${plural(B.leftBefore, 'place', 'places')} left before.</p>
+    <p>${[B.booked && `<span class="chip ok">${B.booked} booked</span>`, B.full && `<span class="chip no">${B.full} told full</span>`,
+         B.closed && `<span class="chip no">${B.closed} told closed</span>`, B.already && `<span class="chip no">${B.already} already booked</span>`,
+         B.refused && `<span class="chip bad">${B.refused} refused by the database</span>`, B.unavailable && `<span class="chip warn">${B.unavailable} database unavailable</span>`,
+         B.noReply && `<span class="chip warn">${B.noReply} no reply</span>`].filter(Boolean).join('')}</p>
+    <p>${B.withinCapacity ? `Never past capacity: ${B.bookedAfter} of ${B.capacity}.` : `<b>Oversold: ${B.bookedAfter} of ${B.capacity}.</b>`} ${B.counterMatches ? 'The counter matches the booking rows.' : '<b>The counter does not match the booking rows.</b>'}</p>
+    <p class="sub">${B.lock ? 'With the lock, the requests took turns, so each one saw an up-to-date count.'
+      : B.refused ? `Without the lock, several requests read the same count before any of them wrote. The CHECK constraint refused the ${plural(B.refused, 'write', 'writes')} that would have gone over, so nothing was oversold, but those swimmers got an error instead of a clear "full".`
+      : 'Without the lock, this run happened not to overlap: each request read the count after the one before it had written. Timing decides, so run it again.'}</p></div>`;
+  const same = new Map();
+  $('#reqs').innerHTML = requests.map(e => {
+    const again = e.key && requests.some(o => o !== e && o.key === e.key && requests.indexOf(o) > requests.indexOf(e));
+    const lost = e.lost ? ` The pool ${e.serverSaid ? `answered ${e.serverSaid}` : 'is answering'}, but the reply never reached the app.` : '';
+    return `<li><span class="t">${e.at}</span><span><span class="what">${esc(e.what)}</span>
+      <br>${answerChip(e)}<span class="meta">${e.who ? esc(e.who) : ''}${e.key ? `, key ${e.key.slice(0, 8)}${again ? ' (same key again)' : ''}` : ''}${e.ms != null ? `, ${e.ms} ms` : ''}.${esc(lost)}</span></span></li>`;
+  }).join('') || '<li><span></span><span class="meta">Nothing sent yet. Book a session, or try one of the buttons above.</span></li>';
+}
+
+function renderToolbar() {
+  document.querySelectorAll('[data-action="theme"]').forEach(b => b.setAttribute('aria-pressed', b.dataset.value === app.theme));
+  const water = $('#water-btn');
+  water.textContent = app.waterPaused ? 'Play water' : 'Pause water';
+  water.setAttribute('aria-pressed', app.waterPaused);
+  const lose = $('#lose-btn');
+  lose.classList.toggle('armed', server.loseNextReply);
+  lose.textContent = server.loseNextReply ? 'Next reply will be lost' : 'Lose a reply';
+  const downFor = Math.ceil((server.dbDownUntil - Date.now()) / 1000);
+  $('#db-btn').classList.toggle('armed', downFor > 0);
+  $('#db-btn').textContent = downFor > 0 ? `Database down: ${downFor} s` : 'Database down for 10 s';
+  $('#lock-btn').classList.toggle('off', !server.rowLock);
+  $('#lock-btn').textContent = `Row lock: ${server.rowLock ? 'on' : 'off'}`;
+}
+
+function renderAll() { renderToolbar(); renderSwimmer(); renderOperator(); renderScenes(); }
+function announce(text) { $('#announce').textContent = text; }
+
+// ---------- Demo buttons ----------
+async function blitz() {
+  const s = session(app.selected);
+  if (app.blitz && app.blitz.running) return;
+  app.blitz = { running: true, name: s.name };
+  renderScenes();
+  bubblesBeside($('#reqs').closest('.panel'), 60, 1500);
+  const leftBefore = s.capacity - s.booked;
+  const answers = await Promise.all(Array.from({ length: 30 }, (_, i) => {
+    const who = `demo-${pad(i + 1)}`, key = newKey();
+    // All 30 reach the server within a few milliseconds, like the race tests that start their
+    // threads together.
+    return send(`Book ${s.name}`, who, key, () => handleBook(s.id, who, key), { quiet: true, latency: [20, 26] });
+  }));
+  const count = f => answers.filter(f).length;
+  const err = a => a.body && a.body.error;
+  const rows = confirmedIn(s.id).length;
+  app.blitz = {
+    name: s.name, lock: server.rowLock, leftBefore, capacity: s.capacity, bookedAfter: s.booked,
+    booked: count(a => a.status === 201), full: count(a => a.status === 409 && err(a) === 'session is full'),
+    closed: count(a => a.status === 409 && err(a) === 'session is closed'), already: count(a => a.status === 409 && a.body.booking_id != null),
+    refused: count(a => a.status === 500), unavailable: count(a => a.status === 503), noReply: count(a => a.status === null),
+    withinCapacity: s.booked <= s.capacity, counterMatches: rows === s.booked,
+  };
+  logRequest({ at: clock(), what: `30 bookings at once for ${s.name}`, who: 'demo-01 to demo-30', key: null, ms: null,
+    answer: { status: app.blitz.booked ? 201 : 409, body: { error: 'session is full' } }, lost: false });
+  renderScenes();
+  refresh();
+}
+
+function pickSessionToBook() {
+  return app.view.find(v => v.status === 'open' && v.remaining > 0 && !cardModel(v).mine && !cardModel(v).pending);
+}
+
+function demoBooking(intro) {
+  const v = pickSessionToBook();
+  app.tab = 'sessions';
+  renderSwimmer();
+  if (!v) { announce(`${intro} Tap Book on any session to see it.`); return; }
+  announce(`${intro} Booking ${v.name} for ${app.swimmer}.`);
+  book(v.id);
+}
+
+// ---------- Pool header: a lane swim seen from the side, paused when hidden, off screen or when motion is reduced ----------
+// Each swimmer's place, stroke and turns are worked out from the clock, so a paused frame and a
+// running one use the same code. Only loose spray is simulated frame by frame: every droplet gets
+// a speed and then falls under gravity until it drops back into the water.
+const water = { canvas: $('#water'), ctx: null, raf: 0, colors: {}, w: 0, h: 0, onScreen: true, last: 0, drops: [], taps: [], t0: null, stands: null, standsKey: '' };
+water.ctx = water.canvas.getContext('2d');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const STROKE_MS = 1500, GLIDE_MS = 1200, TUCK_MS = 650, DIVE_MS = 700, DPS = 3;      // DPS: distance per stroke cycle, in body units (u)
+const SKIN = ['#F2CBA8', '#D9A27A', '#B47A4E', '#8C5634', '#5F3B24'];
+const CAPS = ['#F2B705', '#0E8C92', '#2F5FC4', '#D33A45', '#FFFFFF'];
+const SUITS = ['#1C2E4A', '#7A1F2B', '#0B4F55', '#3D2C63', '#22303A'];
+// Where the hand is, relative to the shoulder, through one arm stroke (p from 0 to 1; units of u; y down)
+const HAND = [
+  [0, -0.82, 0.1],     // leaves the water at the hip, elbow first
+  [0.08, -0.35, -0.12], // elbow high, hand trailing
+  [0.16, 0.42, -0.18], // swings forward over the water
+  [0.24, 0.85, -0.06],
+  [0.3, 1, 0.03],      // goes in in front of the head
+  [0.42, 1.08, 0.1],   // stretches forward
+  [0.55, 0.85, 0.42],  // catches the water
+  [0.75, 0.1, 0.58],   // pulls under the body
+  [0.9, -0.75, 0.3],   // pushes back past the hip
+];
+const rnd = n => { const x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); };
+const hexRgb = h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16));
+const mix = (a, b, f) => '#' + hexRgb(a).map((v, k) => Math.round(v + (hexRgb(b)[k] - v) * f).toString(16).padStart(2, '0')).join('');
+const rgba = (hex, a) => `rgba(${hexRgb(hex).join(',')},${a})`;
+const clear = color => color.replace(/[\d.]+\)$/, '0)');
+const lerp2 = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+const ease = f => f * f * (3 - 2 * f);
+const blob = (ctx, x, y, r) => { ctx.beginPath(); ctx.arc(x, y, Math.max(0.5, r), 0, Math.PI * 2); ctx.fill(); };
+const pill = (ctx, x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); ctx.fill(); };
+// A limb: a tapered shape from a (radius r1) to b (radius r2)
+function capsule(ctx, a, b, r1, r2) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;
+  ctx.beginPath();
+  ctx.moveTo(a[0] + nx * r1, a[1] + ny * r1); ctx.lineTo(b[0] + nx * r2, b[1] + ny * r2);
+  ctx.lineTo(b[0] - nx * r2, b[1] - ny * r2); ctx.lineTo(a[0] - nx * r1, a[1] - ny * r1);
+  ctx.closePath(); ctx.fill();
+  blob(ctx, a[0], a[1], r1); blob(ctx, b[0], b[1], r2);
+}
+// A closed shape with rounded corners through the given points
+function smoothShape(ctx, pts) {
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], n = pts.length;
+  ctx.beginPath(); ctx.moveTo(...mid(pts[n - 1], pts[0]));
+  for (let k = 0; k < n; k++) ctx.quadraticCurveTo(pts[k][0], pts[k][1], ...mid(pts[k], pts[(k + 1) % n]));
+  ctx.closePath(); ctx.fill();
+}
+// The hand's place at p, on a smooth curve through the HAND points (Catmull-Rom)
+function handAt(p) {
+  const n = HAND.length; let k = n - 1;
+  while (HAND[k][0] > p) k--;
+  const q = (p - HAND[k][0]) / ((k + 1 < n ? HAND[k + 1][0] : 1) - HAND[k][0]), P = j => HAND[(j + n) % n];
+  const [a, b, c, d] = [P(k - 1), P(k), P(k + 1), P(k + 2)];
+  return [1, 2].map(i => 0.5 * (2 * b[i] + (c[i] - a[i]) * q + (2 * a[i] - 5 * b[i] + 4 * c[i] - d[i]) * q * q + (3 * b[i] - a[i] - 3 * c[i] + d[i]) * q * q * q));
+}
+// Two-bone inverse kinematics: the elbow is where two 0.55 u bones from the shoulder and the hand meet.
+// Of the two answers, the higher one, so the elbow leads.
+function elbowFor(sh, h) {
+  const dx = h[0] - sh[0], dy = h[1] - sh[1], a = Math.acos(Math.min(Math.hypot(dx, dy), 1.099) / 1.1), base = Math.atan2(dy, dx);
+  const [e1, e2] = [base - a, base + a].map(b => [sh[0] + 0.55 * Math.cos(b), sh[1] + 0.55 * Math.sin(b)]);
+  return e1[1] < e2[1] ? e1 : e2;
+}
+
+function readWaterColors() {
+  const cs = getComputedStyle(document.documentElement), c = water.colors;
+  for (const k of ['stand', 'aisle', 'seat', 'seat-2', 'steel', 'clock-face', 'clock-ink', 'wall', 'deck', 'far', 'near', 'mark', 'float', 'float-2', 'ripple']) c[k] = cs.getPropertyValue('--pool-' + k).trim();
+  for (const k of ['light', 'shade']) c[k] = cs.getPropertyValue('--pool-' + k).trim();
+  for (const k of ['glow', 'vig', 'shadow-a']) c[k] = parseFloat(cs.getPropertyValue('--pool-' + k));
+  c.floor = cs.getPropertyValue('--page').trim(); c['floor-deep'] = cs.getPropertyValue('--pool-floor-deep').trim(); c['tile-line'] = cs.getPropertyValue('--pool-tile-line').trim();
+  c.red = cs.getPropertyValue('--red').trim();
+  c.pool = mix(c.far, c.near, 0.5);
+  water.caustics = causticPattern(water.ctx, c.light);
+}
+
+// Caustics: the bright net that rippling water focuses onto the pool floor. One tile is made once:
+// brightness peaks along the borders between random cells (where the nearest and second-nearest
+// points are equally far), and distances wrap around so the tile repeats without seams.
+function makeCaustics(size) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = size;
+  const cx = cv.getContext('2d'), img = cx.createImageData(size, size), pts = [];
+  for (let k = 0; k < 18; k++) pts.push([rnd(k + 50) * size, rnd(k + 90) * size]);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    let d1 = Infinity, d2 = Infinity;
+    for (const [qx, qy] of pts) {
+      let dx = Math.abs(x - qx), dy = Math.abs(y - qy);
+      if (dx > size / 2) dx = size - dx;
+      if (dy > size / 2) dy = size - dy;
+      const d = dx * dx + dy * dy;
+      if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+    }
+    const o = (y * size + x) * 4;
+    img.data[o] = img.data[o + 1] = img.data[o + 2] = 255;
+    img.data[o + 3] = Math.round(255 * Math.max(0, 1 - (Math.sqrt(d2) - Math.sqrt(d1)) / 9) ** 2.6);
+  }
+  cx.putImageData(img, 0, 0);
+  return cv;
+}
+function causticPattern(ctx, color) {
+  water.causticMask = water.causticMask || makeCaustics(200);
+  const cv = document.createElement('canvas'); cv.width = cv.height = 200;
+  const x = cv.getContext('2d');
+  x.drawImage(water.causticMask, 0, 0); x.globalCompositeOperation = 'source-in'; x.fillStyle = color; x.fillRect(0, 0, 200, 200);
+  return ctx.createPattern(cv, 'repeat');
+}
+function sizeWater() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  water.w = water.canvas.clientWidth; water.h = water.canvas.clientHeight;
+  water.canvas.width = water.w * dpr; water.canvas.height = water.h * dpr;
+  water.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function sceneGeometry() {
+  const { w, h } = water, standsH = Math.round(0.26 * h), yW = Math.round(0.36 * h);
+  const lanes = Math.max(3, Math.min(5, Math.round(w / 280))), lh = (h - yW) / lanes;
+  return { w, h, standsH, deckTop: standsH + Math.round(0.03 * h), yW, lanes, lh, u: Math.min(0.85 * lh, w / 12) };   // u: swimmer scale in px
+}
+
+function drawStands(ctx, g, c) {
+  const rows = 3, rowH = g.standsH / (rows + 0.45), sw = rowH * 0.78, pitch = sw * 1.22, block = 8, aisle = pitch * 1.3, blockW = block * pitch + aisle;
+  ctx.fillStyle = c.stand; ctx.fillRect(0, 0, g.w, g.standsH);
+  const first = g.w / 2 - block * pitch / 2;                      // a block of seats sits behind the clock
+  for (let bx = first - Math.ceil(first / blockW) * blockW; bx < g.w; bx += blockW) {
+    ctx.fillStyle = c.aisle; ctx.fillRect(bx + block * pitch, 0, aisle - (pitch - sw), g.standsH);
+    for (let r = 0; r < rows; r++) for (let k = 0; k < block; k++) {
+      const x = bx + k * pitch, y = rowH * (0.3 + r), rr = Math.min(4, sw / 3);
+      ctx.fillStyle = c['seat-2']; pill(ctx, x, y + rowH * 0.1, sw, rowH * 0.6, rr);
+      ctx.fillStyle = c.seat; pill(ctx, x, y, sw, rowH * 0.55, rr);
+    }
+  }
+  const fog = ctx.createLinearGradient(0, 0, 0, g.standsH);       // fade the stands back so the water stays in front
+  fog.addColorStop(0, rgba(c.stand, 0.6)); fog.addColorStop(1, rgba(c.stand, 0.15));
+  ctx.fillStyle = fog; ctx.fillRect(0, 0, g.w, g.standsH);
+  ctx.fillStyle = c.steel; ctx.fillRect(0, g.standsH - 3, g.w, 2);
+}
+
+// The pace clock lane swimmers use to time their lengths. It shows the real time.
+function drawClock(ctx, g, c) {
+  const R = Math.min(g.standsH * 0.42, 56), cx = g.w / 2, cy = g.standsH * 0.5;
+  ctx.fillStyle = c['clock-ink']; blob(ctx, cx, cy, R + Math.max(2, R * 0.08));
+  ctx.fillStyle = c['clock-face']; blob(ctx, cx, cy, R);
+  ctx.strokeStyle = c['clock-ink'];
+  for (let k = 0; k < 60; k++) {
+    const a = k / 60 * Math.PI * 2, big = k % 5 === 0, r0 = R * (big ? 0.78 : 0.87);
+    ctx.lineWidth = big ? Math.max(1.5, R * 0.05) : 1;
+    ctx.beginPath(); ctx.moveTo(cx + Math.sin(a) * r0, cy - Math.cos(a) * r0); ctx.lineTo(cx + Math.sin(a) * R * 0.94, cy - Math.cos(a) * R * 0.94); ctx.stroke();
+  }
+  if (R >= 24) {
+    ctx.fillStyle = c['clock-ink']; ctx.font = `800 ${Math.round(R * 0.26)}px "Big Shoulders Display", sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    [60, 15, 30, 45].forEach((n, q) => { const a = q * Math.PI / 2; ctx.fillText(n, cx + Math.sin(a) * R * 0.56, cy - Math.cos(a) * R * 0.56); });
+  }
+  const now = new Date(), sec = now.getSeconds() + now.getMilliseconds() / 1000, min = now.getMinutes() + sec / 60;
+  const hand = (turns, len, tail, width, color) => {
+    const a = turns * Math.PI * 2;
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx - Math.sin(a) * tail, cy + Math.cos(a) * tail); ctx.lineTo(cx + Math.sin(a) * len, cy - Math.cos(a) * len); ctx.stroke();
+  };
+  hand(min / 60, R * 0.6, 0, Math.max(2, R * 0.07), c['clock-ink']);
+  hand(sec / 60, R * 0.86, R * 0.18, Math.max(1.5, R * 0.035), c.red);
+  ctx.fillStyle = c.red; blob(ctx, cx, cy, Math.max(2, R * 0.07));
+  ctx.lineCap = 'butt';
+}
+
+function drawLadder(ctx, g, x, c) {
+  const half = Math.max(7, 0.3 * g.u), top = g.deckTop - 0.1 * g.u, rad = Math.max(4, 0.22 * g.u);
+  ctx.strokeStyle = c.steel; ctx.lineWidth = Math.max(2, 0.07 * g.u); ctx.lineCap = 'round';
+  for (const xr of [x - half, x + half]) {
+    ctx.globalAlpha = 0.45; ctx.beginPath(); ctx.moveTo(xr, g.yW + 0.75 * g.lh); ctx.lineTo(xr, g.yW); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.beginPath(); ctx.moveTo(xr, g.yW); ctx.lineTo(xr, top + rad);
+    ctx.arc(xr + rad, top + rad, rad, Math.PI, 0); ctx.lineTo(xr + 2 * rad, g.yW - 0.25 * (g.yW - g.deckTop)); ctx.stroke();
+  }
+  ctx.globalAlpha = 0.45; ctx.beginPath();
+  for (const f of [0.25, 0.5, 0.75]) { const y = g.yW + f * g.lh; ctx.moveTo(x - half, y); ctx.lineTo(x + half, y); }
+  ctx.stroke(); ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+}
+
+// Red floats near both walls, like the last places on the board. The rope rides one slow wave and
+// lifts a little beside a passing swimmer.
+function drawRope(ctx, g, y, t, c, n, swimmers) {
+  const u = g.u, fw = Math.max(5, 0.28 * u), fh = Math.max(4, 0.19 * u), pitch = fw + Math.max(1, 0.05 * u);
+  for (let k = 0, x = 0; x < g.w; k++, x += pitch) {
+    let dy = 0.035 * u * Math.sin((x / (6 * u) - t / 2600) * Math.PI * 2 + n * 1.3);
+    for (const s of swimmers) {
+      if (s.phase !== 'swim' || (s.i !== n && s.i !== n - 1)) continue;
+      const d = (x - (s.x - s.dir * 1.2 * u)) / (1.6 * u);
+      dy -= 0.07 * u * Math.exp(-d * d);
+    }
+    for (const p of water.taps) {                                     // and bobs as a touch ripple passes under it
+      const age = (t - p.t) / 1800;
+      if (age <= 0 || age >= 1) continue;
+      const r = (p.big ? 2.2 : 1.2) * u * Math.sqrt(age), d = (Math.hypot(x - p.x, (y - p.y) / 0.32) - r) / (0.35 * u);
+      dy -= (p.big ? 0.14 : 0.07) * u * (1 - age) * Math.exp(-d * d);
+    }
+    ctx.fillStyle = x < 0.15 * g.w || x + fw > 0.85 * g.w ? c.red : Math.floor(k / 6) % 2 ? c['float-2'] : c.float;
+    pill(ctx, x, y - fh / 2 + dy, fw, fh, fh / 2);
+    ctx.fillStyle = '#FFFFFF'; ctx.globalAlpha = 0.3;
+    pill(ctx, x + fw * 0.2, y - fh / 2 + dy + fh * 0.12, fw * 0.6, fh * 0.28, fh * 0.14);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// Where swimmer i is at time t. One length: push off the wall in a streamline, swim, then tuck and
+// turn. The turn somersaults about the hips, which leaves the head about 2 u back from where it was,
+// facing the other way, upside down; the push-off twists back upright.
+// The first length starts with a dive: swimmers go in one after another from the left wall, timed
+// from the first animated frame. Until then (paused, or reduced motion) everyone is shown mid-length.
+function swimmerAt(g, i, t) {
+  const u = g.u, cycle = STROKE_MS * (0.92 + rnd(i + 0.1) * 0.16), v = DPS * u / cycle;    // px per ms
+  const G = 2.2 * u, start = 3 * u + G, end = g.w - 0.9 * u, D = Math.max(u, end - start), SWIM = D / v;
+  const lap = GLIDE_MS + SWIM + TUCK_MS, tt = t - (water.t0 ?? t - 9000) - 500 - i * 320;
+  const s = { i, dir: 1, y: g.yW + (i + 0.45) * g.lh, phase: 'swim', k: 0, strokes: 0.42 };
+  if (tt < -DIVE_MS) { s.phase = 'ready'; return s; }                // still on the side, out of view
+  if (tt < 0) { s.phase = 'dive'; s.k = (tt + DIVE_MS) / DIVE_MS; s.x = (-1.4 + 4.4 * s.k) * u; return s; }
+  const n = Math.floor(tt / lap), tau = tt - n * lap;
+  const dir = s.dir = n % 2 ? -1 : 1, along = d => dir > 0 ? d : g.w - d;    // distance from the wall this length started at
+  s.first = n === 0;
+  if (tau < GLIDE_MS) {                                               // gliding off the wall, slowing down
+    s.phase = 'glide'; s.k = tau / GLIDE_MS;
+    s.x = along(3 * u + G * (1 - (1 - s.k) ** 2));
+  } else if (tau < GLIDE_MS + SWIM) {                                 // swimming: speed rises a little on each pull
+    const ts = tau - GLIDE_MS, f = ts / SWIM;
+    s.k = ts; s.strokes = 0.42 + ts / cycle;                          // the first stroke starts from the stretch
+    const surge = 0.25 * DPS * u / (4 * Math.PI) * Math.sin(4 * Math.PI * (s.strokes - 0.75)) * Math.sin(Math.PI * f);
+    s.x = along(start + D * f + surge);
+  } else {                                                            // tuck and turn at the wall
+    s.phase = 'tuck'; s.k = (tau - GLIDE_MS - SWIM) / TUCK_MS; s.strokes = 0.42 + SWIM / cycle;
+    s.x = along(end);
+  }
+  return s;
+}
+
+// Front crawl from the side, drawn facing right and mirrored for swimmers going left. Units are u.
+function drawSwimmer(ctx, g, s, t, c) {
+  if (s.phase === 'ready') return;
+  const u = g.u, swim = s.phase === 'swim', glide = s.phase === 'glide', tuck = s.phase === 'tuck', dive = s.phase === 'dive';
+  const deep = tuck ? Math.min(1, s.k * 1.6) : glide ? (s.k < 0.55 ? 1 : 1 - (s.k - 0.55) / 0.45) : dive ? Math.max(0, (s.k - 0.8) / 0.2) : 0;
+  const tone = (hex, under) => mix(hex, c.pool, Math.min(0.7, under + 0.5 * deep));   // under the water, colours fade into it
+  const skin = SKIN[s.i * 2 % 5], far = mix(skin, '#000000', 0.2), X = ([x, y]) => [x * u, y * u];
+  const pA = ((s.strokes % 1) + 1) % 1;
+  const bob = swim ? 0.025 * Math.sin(4 * Math.PI * s.strokes) : 0;      // the body rises a little on each pull
+  const roll = swim ? 0.035 * Math.cos(2 * Math.PI * (pA - 0.15)) : 0;   // and rolls towards the arm that is recovering
+
+  const STREAM = [1.2, 0], TUCKED = [-0.55, 0.3];
+  const armAt = (p, sh) => {
+    const o = handAt(p);
+    let h = [sh[0] + o[0], sh[1] + o[1]];
+    if (swim && s.k < 350) h = lerp2(STREAM, h, ease(s.k / 350));    // out of the streamline into the first stroke
+    if (tuck) h = lerp2(h, TUCKED, ease(Math.min(1, s.k * 2.5)));
+    if (glide) h = s.first ? STREAM : lerp2(TUCKED, STREAM, ease(Math.min(1, s.k / 0.25)));
+    if (dive) h = STREAM;
+    const dx = h[0] - sh[0], dy = h[1] - sh[1], d = Math.hypot(dx, dy);
+    if (d > 1.09) h = [sh[0] + dx / d * 1.09, sh[1] + dy / d * 1.09];   // keep the hand within reach
+    return { over: swim && p < 0.3, sh, e: elbowFor(sh, h), h };
+  };
+  const legAt = off => {
+    let a, b;
+    if (swim) { const k = 6 * Math.PI * s.strokes + off; a = 0.1 * Math.sin(k); b = 0.08 + 0.2 * Math.max(0, Math.sin(k + 0.6)); }   // six kicks a stroke, knees bend on the way up
+    else if (dive) { a = 0.04; b = 0.06; }                                                                                               // straight, toes pointed
+    else if (glide) { const k = t / 480 * Math.PI * 2; a = 0.12 * Math.sin(k); b = 0.12 + 0.1 * Math.sin(k + 0.8); }                // legs together
+    else { const f = Math.sin(Math.PI * Math.min(1, s.k * 1.25)); a = 2 * f; b = 0.1 - 2.4 * f; }                                     // knees to the chest
+    const hip = [-1.38, 0.1], knee = [hip[0] - 0.6 * Math.cos(a), hip[1] + 0.6 * Math.sin(a)];
+    const ankle = [knee[0] - 0.55 * Math.cos(a + b), knee[1] + 0.55 * Math.sin(a + b)];
+    return { hip, knee, ankle, toe: [ankle[0] - 0.2 * Math.cos(a + b - 0.25), ankle[1] + 0.2 * Math.sin(a + b - 0.25)] };
+  };
+  const drawArm = (a, color) => {
+    ctx.fillStyle = color;
+    capsule(ctx, X(a.sh), X(a.e), 0.1 * u, 0.08 * u);
+    capsule(ctx, X(a.e), X(a.h), 0.075 * u, 0.06 * u);
+    ctx.beginPath(); ctx.ellipse(a.h[0] * u, a.h[1] * u, 0.1 * u, 0.065 * u, Math.atan2(a.h[1] - a.e[1], a.h[0] - a.e[0]), 0, Math.PI * 2); ctx.fill();
+  };
+  const drawLeg = (l, color) => {
+    ctx.fillStyle = color;
+    capsule(ctx, X(l.hip), X(l.knee), 0.125 * u, 0.09 * u);
+    capsule(ctx, X(l.knee), X(l.ankle), 0.085 * u, 0.06 * u);
+    capsule(ctx, X(l.ankle), X(l.toe), 0.06 * u, 0.035 * u);
+  };
+
+  ctx.save();
+  ctx.translate(s.x, s.y); ctx.scale(s.dir, 1);
+
+  // Soft shadow on the pool floor
+  ctx.save(); ctx.translate(-1.1 * u, 0.5 * u); ctx.scale(1, 0.07);
+  const sg = ctx.createRadialGradient(0, 0, 0, 0, 0, 1.9 * u);
+  sg.addColorStop(0, c.mark); sg.addColorStop(1, clear(c.mark));
+  ctx.fillStyle = sg; ctx.globalAlpha = 1 - 0.5 * deep; blob(ctx, 0, 0, 1.9 * u);
+  ctx.restore(); ctx.globalAlpha = 1;
+
+  // Wake trailing off behind
+  if (swim) {
+    ctx.lineWidth = Math.max(1, 0.045 * u); ctx.lineCap = 'round';
+    for (const [y0, y1, len, a] of [[0.27, 0.36, 3.6, 0.85], [-0.15, -0.24, 2.8, 0.5]]) {
+      const wg = ctx.createLinearGradient(-0.2 * u, 0, -len * u, 0);
+      wg.addColorStop(0, c.ripple); wg.addColorStop(1, clear(c.ripple));
+      ctx.strokeStyle = wg; ctx.globalAlpha = a;
+      ctx.beginPath(); ctx.moveTo(-0.2 * u, (y0 + bob) * u); ctx.quadraticCurveTo(-len * 0.5 * u, (y0 + 0.02) * u, -len * u, y1 * u); ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+  }
+
+  // The swimmer: far side first, then the body, then the near side
+  ctx.save();
+  const C = X([-1.05, 0.1]), turnAbout = a => { ctx.translate(...C); ctx.rotate(a); ctx.translate(-C[0], -C[1]); };
+  if (dive) { ctx.translate(0, (-1.4 + 1.7 * s.k - 1.2 * s.k * (1 - s.k)) * u); turnAbout(0.1 + 0.6 * s.k * s.k); }   // an arc, head going down
+  else ctx.translate(0, (bob + 0.3 * deep) * u);
+  if (tuck) turnAbout(Math.PI * ease(s.k));
+  if (glide && s.first) turnAbout(0.7 * (1 - ease(Math.min(1, s.k / 0.3))));                                   // levelling out after the dive
+  if (glide && !s.first) { ctx.translate(0, C[1]); ctx.scale(1, -Math.cos(Math.PI * Math.min(1, s.k / 0.45))); ctx.translate(0, -C[1]); }
+  const near = armAt(pA, [-0.12, 0.03 - roll]), farArm = armAt((pA + 0.5) % 1, [-0.16, roll]), nearLeg = legAt(0);
+  drawArm(farArm, tone(far, farArm.over ? 0.05 : 0.45));
+  drawLeg(legAt(Math.PI), tone(far, 0.4));
+  ctx.fillStyle = tone(skin, 0.05);
+  smoothShape(ctx, [[-0.05, -0.15], [-0.55, -0.15], [-1.15, -0.1], [-1.52, -0.02], [-1.5, 0.23], [-1.05, 0.29], [-0.5, 0.31], [-0.1, 0.23]].map(X));
+  ctx.fillStyle = tone(SUITS[(s.i + 2) % 5], 0.05);
+  smoothShape(ctx, [[-1.02, -0.11], [-1.54, -0.02], [-1.52, 0.23], [-1.04, 0.3]].map(X));
+  drawLeg(nearLeg, tone(skin, 0.28));
+  if (!near.over) drawArm(near, tone(skin, 0.35));
+
+  // Head with cap and goggles; every other stroke it turns up to breathe as the near arm comes out
+  const bp = (pA + 0.1) % 1, breathe = swim && bp < 0.38 && Math.floor(s.strokes + 0.1) % 2 === 0 ? Math.sin(Math.PI * bp / 0.38) : 0;
+  ctx.save();
+  ctx.translate(-0.04 * u, 0.03 * u); ctx.rotate(-0.5 * breathe); ctx.translate(0.04 * u, -0.03 * u);
+  ctx.fillStyle = tone(skin, 0);
+  capsule(ctx, X([-0.04, 0.03]), X([0.13, -0.05]), 0.11 * u, 0.11 * u);
+  blob(ctx, 0.13 * u, -0.05 * u, 0.21 * u);
+  ctx.fillStyle = tone(CAPS[s.i % 5], 0);
+  ctx.beginPath(); ctx.arc(0.13 * u, -0.05 * u, 0.22 * u, Math.PI * 0.6, Math.PI * 1.9); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = ctx.fillStyle = tone('#0F2A3A', 0); ctx.lineWidth = Math.max(1, 0.03 * u);
+  ctx.beginPath(); ctx.moveTo(-0.07 * u, -0.03 * u); ctx.lineTo(0.26 * u, -0.06 * u); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0.27 * u, -0.06 * u, 0.06 * u, 0.045 * u, 0, 0, Math.PI * 2); ctx.fill();
+  if (breathe > 0.35) blob(ctx, 0.27 * u, 0.07 * u, 0.035 * u * breathe);
+  ctx.fillStyle = '#FFFFFF'; ctx.globalAlpha = 0.7; blob(ctx, 0.285 * u, -0.072 * u, 0.016 * u); ctx.globalAlpha = 1;
+  ctx.restore();
+  if (near.over) drawArm(near, tone(skin, 0));
+  ctx.restore();
+
+  // White water: a bow wave at the head, a crown of spray where each hand goes in, foam at the kick
+  if (swim) {
+    ctx.fillStyle = c.ripple;
+    ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.ellipse(0.39 * u, (0.13 + bob) * u, 0.17 * u, 0.065 * u, 0, -Math.PI / 2, Math.PI / 2); ctx.fill();
+    for (const p of [pA, (pA + 0.5) % 1]) {
+      const age = (p - 0.3) / 0.14;
+      if (age < 0 || age >= 1) continue;
+      const x0 = 0.73 - DPS * (p - 0.3), y0 = 0.05;                   // stays where the hand went in while the body moves on
+      ctx.globalAlpha = 0.7 * (1 - age);
+      ctx.beginPath(); ctx.ellipse(x0 * u, y0 * u, (0.1 + 0.15 * age) * u, 0.045 * u, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1 - age;
+      for (let j = 0; j < 7; j++) {
+        const a = Math.PI * (0.22 + 0.093 * j), sp = 0.55 + 0.35 * rnd(j + s.i * 3);
+        blob(ctx, (x0 + Math.cos(a) * sp * age * 0.8) * u, (y0 - Math.sin(a) * sp * age * 1.3 + 1.1 * age * age) * u, (0.045 - 0.02 * age) * u);
+      }
+    }
+    ctx.globalAlpha = 0.45;
+    for (let j = 0; j < 4; j++) blob(ctx, (nearLeg.toe[0] + 0.1 - j * 0.12) * u, (0.08 + bob + (j % 2) * 0.05) * u, 0.07 * u * (1 + 0.35 * Math.sin(6 * Math.PI * s.strokes + j * 1.7)));
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+function spray(x, y, n, u, up, drift) {
+  if (water.drops.length > 600) return;
+  for (let k = 0; k < n; k++) {
+    const life = 0.45 + Math.random() * 0.4;
+    water.drops.push({ x, y, floor: y + 0.12 * u, life, max: life, r: (0.04 + Math.random() * 0.05) * u,
+      vx: (drift + (Math.random() - 0.5) * 1.2) * u, vy: -(0.45 + Math.random() * 0.55) * up * u });
+  }
+}
+// Throws spray at each turn, as a swimmer comes up, where a hand goes in and on each kick, then moves every droplet on.
+function stepScene(t) {
+  const g = sceneGeometry(), u = g.u, dt = water.last ? Math.min(0.05, (t - water.last) / 1000) : 0;
+  if (water.last && t - water.last < 200) {
+    for (let i = 0; i < g.lanes; i++) {
+      const a = swimmerAt(g, i, water.last), b = swimmerAt(g, i, t), f = b.dir;
+      if (a.phase === 'swim' && b.phase === 'tuck') spray(b.x + f * 0.2 * u, b.y, 16, u, 2.6, -0.3 * f);
+      if (a.phase === 'tuck' && b.phase === 'tuck' && a.k < 0.5 && b.k >= 0.5) spray(b.x + f * 0.4 * u, b.y, 22, u, 3.2, -0.5 * f);   // legs coming over
+      if (a.phase === 'glide' && b.phase === 'swim') spray(b.x + f * 0.2 * u, b.y, 10, u, 1.8, 0.3 * f);
+      if (a.phase === 'dive' && b.phase === 'dive' && a.k < 0.72 && b.k >= 0.72) {                                   // the dive goes in
+        spray(b.x, b.y, 34, u, 3.6, 0.3); water.taps.push({ x: b.x, y: b.y, t, big: true });
+      }
+      if (a.phase !== 'swim' || b.phase !== 'swim') continue;
+      for (const off of [0.7, 0.2]) if (Math.floor(a.strokes + off) !== Math.floor(b.strokes + off)) spray(b.x + f * 0.73 * u, b.y + 0.05 * u, 5, u, 2.2, 0.2 * f);
+      if (Math.floor(a.strokes * 6) !== Math.floor(b.strokes * 6)) spray(b.x - f * 2.7 * u, b.y + 0.1 * u, 2, u, 1.5, -0.4 * f);
+    }
+  }
+  water.last = t;
+  for (const d of water.drops) { d.vy += 9 * u * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.life -= dt; }   // gravity
+  water.drops = water.drops.filter(d => d.life > 0 && !(d.vy > 0 && d.y > d.floor));
+}
+
+// The stands drawn once per size and theme, slightly out of focus so the water is the subject
+function standsLayer(g, c) {
+  const dpr = water.canvas.width / g.w, key = [g.w, g.h, dpr, c.stand, c.seat].join();
+  if (water.standsKey === key) return water.stands;
+  const layer = () => { const cv = document.createElement('canvas'); cv.width = Math.ceil(g.w * dpr); cv.height = Math.ceil(g.standsH * dpr); const x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); return [cv, x]; };
+  const [sharp, sx] = layer(), [soft, bx] = layer();
+  drawStands(sx, g, c);
+  bx.fillStyle = c.stand; bx.fillRect(0, 0, g.w, g.standsH);
+  bx.filter = 'blur(1.5px)'; bx.drawImage(sharp, 0, 0, g.w, g.standsH); bx.filter = 'none';
+  water.standsKey = key; water.stands = soft;
+  return soft;
+}
+// Two copies of the caustic tile drifting different ways; where they cross the light looks like it shifts and focuses
+function drawCaustics(ctx, g, t, c) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, g.yW, g.w, g.h - g.yW); ctx.clip();
+  ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = water.caustics;
+  for (const [sx, sy, vx, vy, a] of [[0.62, 0.3, 0.012, 0.004, 0.12], [0.85, 0.4, -0.009, 0.006, 0.08]]) {
+    const ox = (t * vx) % 200, oy = (t * vy) % 200;
+    ctx.save(); ctx.translate(0, g.yW); ctx.scale(sx, sy); ctx.translate(ox, oy);
+    ctx.globalAlpha = a * c.glow; ctx.fillRect(-ox - 200, -oy - 200, g.w / sx + 400, (g.h - g.yW) / sy + 400);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+// Slanting light shafts under the surface, swaying and breathing slowly
+function drawShafts(ctx, g, t, c) {
+  const H = g.h - g.yW;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let k = 0; k < 5; k++) {
+    const x0 = (rnd(k + 200) * 1.1 - 0.05) * g.w + Math.sin(t / 7000 + k * 1.7) * 0.025 * g.w, wd = (0.025 + 0.04 * rnd(k + 210)) * g.w, slant = 0.35 * H;
+    const gr = ctx.createLinearGradient(0, g.yW, 0, g.h);
+    gr.addColorStop(0, rgba(c.light, c.glow * 0.09 * (0.6 + 0.4 * Math.sin(t / 4300 + k * 2.3)))); gr.addColorStop(1, rgba(c.light, 0));
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.moveTo(x0, g.yW); ctx.lineTo(x0 + wd, g.yW); ctx.lineTo(x0 + wd + slant, g.h); ctx.lineTo(x0 + slant * 0.85, g.h); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+// The surface: brighter at the far side (water reflects more at a low angle), a shadow under the pool's
+// edge, and the ceiling lights reflected as streaks broken up by the ripples
+function drawSurface(ctx, g, t, c) {
+  const H = g.h - g.yW, sheen = ctx.createLinearGradient(0, g.yW, 0, g.yW + 0.35 * H), edge = ctx.createLinearGradient(0, g.yW, 0, g.yW + 8);
+  sheen.addColorStop(0, rgba(c.light, 0.28 * c.glow)); sheen.addColorStop(1, rgba(c.light, 0));
+  ctx.fillStyle = sheen; ctx.fillRect(0, g.yW, g.w, 0.35 * H);
+  edge.addColorStop(0, rgba(c.shade, 0.25)); edge.addColorStop(1, rgba(c.shade, 0));
+  ctx.fillStyle = edge; ctx.fillRect(0, g.yW, g.w, 8);
+  ctx.fillStyle = c.light;
+  const n = Math.max(3, Math.round(g.w / 220));
+  for (let k = 0; k < n; k++) {
+    const x = (k + 0.5) / n * g.w;
+    for (let j = 0; j < 6; j++) {
+      const y = g.yW + 5 + j * Math.max(3, 0.11 * g.u) * (1 + j * 0.25), wob = Math.sin(t / 650 + j * 1.4 + k * 2) * (1 + j) * 0.8;
+      const wd = (0.55 - j * 0.07) * g.u * (0.8 + 0.2 * Math.sin(t / 900 + j + k));
+      ctx.globalAlpha = (0.55 - j * 0.08) * c.glow; pill(ctx, x - wd / 2 + wob, y, wd, Math.max(1.5, 0.05 * g.u), 1);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+// Glints: brief twinkles of light that come and go in new places
+function drawGlints(ctx, g, t, c) {
+  ctx.fillStyle = c.light;
+  for (let k = 0; k < 26; k++) {
+    const P = 2200 + rnd(k + 300) * 2600, cyc = t / P + rnd(k + 310), b = Math.sin(Math.PI * 2 * cyc);
+    if (b < 0.6) continue;
+    const a = ((b - 0.6) / 0.4) ** 2, n = Math.floor(cyc), r = (1 + 1.5 * rnd(k + 340)) * a;
+    const x = rnd(k + 320 + n * 7) * g.w, y = g.yW + (0.05 + 0.9 * rnd(k + 330 + n * 7)) * (g.h - g.yW);
+    ctx.globalAlpha = 0.9 * a * c.glow;
+    ctx.fillRect(x - 3 * r, y - 0.5, 6 * r, 1); ctx.fillRect(x - 0.5, y - 2 * r, 1, 4 * r); blob(ctx, x, y, r * 0.6);
+  }
+  ctx.globalAlpha = 1;
+}
+// Ripples from touching the water: rings that spread out and slow down
+function drawTaps(ctx, g, t, c) {
+  water.taps = water.taps.filter(p => t - p.t < 1800);
+  const lw = Math.max(1.5, 0.06 * g.u);
+  for (const p of water.taps) {
+    const age = (t - p.t) / 1800;
+    for (const lag of [0, 0.15, 0.3]) {
+      const a = age - lag;
+      if (a <= 0) continue;
+      const r = (p.big ? 2.2 : 1.2) * g.u * Math.sqrt(a), fade = (p.big ? 1 : 0.75) * (1 - a) ** 1.5;
+      ctx.lineWidth = lw;                                              // each ring: a bright crest with a darker trough just inside
+      ctx.strokeStyle = c.shade; ctx.globalAlpha = 0.18 * fade;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y + lw * 0.6, Math.max(0, r - lw), Math.max(0, r - lw) * 0.32, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = c.light; ctx.globalAlpha = 0.85 * fade;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, r, r * 0.32, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+// A soft darkening at the edges, so the eye settles on the middle of the pool
+function drawVignette(ctx, g, c) {
+  ctx.save(); ctx.translate(g.w / 2, g.h * 0.55); ctx.scale(g.w / 2, g.h * 0.75);
+  const vg = ctx.createRadialGradient(0, 0, 0.55, 0, 0, 1.25);
+  vg.addColorStop(0, rgba(c.shade, 0)); vg.addColorStop(1, rgba(c.shade, 0.3 * c.vig));
+  ctx.fillStyle = vg; ctx.fillRect(-1.2, -1.2, 2.4, 2.4);
+  ctx.restore();
+}
+
+function drawWater(t) {
+  const { ctx, colors: c } = water, g = sceneGeometry(), { w, h, yW, lanes, lh, u } = g;
+  ctx.drawImage(standsLayer(g, c), 0, 0, w, g.standsH);
+  drawClock(ctx, g, c);
+  ctx.fillStyle = c.wall; ctx.fillRect(0, g.standsH, w, g.deckTop - g.standsH);
+  ctx.fillStyle = c.deck; ctx.fillRect(0, g.deckTop, w, yW - g.deckTop);
+  ctx.fillStyle = c.wall; ctx.fillRect(0, yW - 3, w, 3);                // the pool's edge
+
+  const wg = ctx.createLinearGradient(0, yW, 0, h);
+  wg.addColorStop(0, c.far); wg.addColorStop(1, c.near);
+  ctx.fillStyle = wg; ctx.fillRect(0, yW, w, h - yW);
+  ctx.fillStyle = c.mark; ctx.fillRect(0, yW, w, 2);
+  ctx.globalAlpha = 0.45;                                                // lane lines on the floor, faint through the water
+  for (let i = 0; i < lanes; i++) {
+    const y = yW + (i + 0.62) * lh, bh = Math.max(3, 0.12 * lh), tb = 0.42 * lh, x0 = 0.06 * w, x1 = 0.94 * w;
+    ctx.fillRect(x0, y - bh / 2, x1 - x0, bh); ctx.fillRect(x0 - bh, y - tb / 2, bh, tb); ctx.fillRect(x1, y - tb / 2, bh, tb);
+  }
+  ctx.globalAlpha = 1;
+  drawCaustics(ctx, g, t, c);
+  drawShafts(ctx, g, t, c);
+  drawSurface(ctx, g, t, c);
+  ctx.strokeStyle = c.ripple; ctx.lineWidth = 1.2; ctx.lineCap = 'round';   // a few highlights swaying on the surface
+  for (let i = 0; i < lanes; i++) for (let k = 0; k < 3; k++) {
+    const n = i * 7 + k, len = (1.5 + 2 * rnd(n)) * u, cx = rnd(n + 0.3) * w + Math.sin(t / 5000 + n) * 0.5 * u, y = yW + (0.15 + 0.7 * rnd(n + 0.6)) * lh;
+    ctx.globalAlpha = 0.18 + 0.14 * Math.sin(t / 3200 + n * 2.1);
+    ctx.beginPath(); ctx.moveTo(cx - len / 2, y); ctx.quadraticCurveTo(cx, y - 0.07 * u, cx + len / 2, y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+  drawLadder(ctx, g, 0.1 * w, c); drawLadder(ctx, g, 0.9 * w, c);
+
+  // Lanes from the back wall forwards: the rope behind a lane, then its swimmer, so nearer things cover further ones
+  const swimmers = Array.from({ length: lanes }, (_, i) => swimmerAt(g, i, t));
+  for (let i = 0; i < lanes; i++) {
+    if (i) drawRope(ctx, g, yW + i * lh, t, c, i, swimmers);
+    drawSwimmer(ctx, g, swimmers[i], t, c);
+  }
+  drawTaps(ctx, g, t, c);
+  ctx.fillStyle = c.ripple;
+  for (const d of water.drops) { ctx.globalAlpha = Math.min(1, d.life / d.max * 1.6); blob(ctx, d.x, d.y, d.r); }
+  ctx.globalAlpha = 1;
+  drawGlints(ctx, g, t, c);
+  drawVignette(ctx, g, c);
+}
+function loop(t) {
+  if (water.t0 === null) water.t0 = t;                                 // the opening dive starts on the first animated frame
+  stepScene(t); drawWater(t); water.raf = requestAnimationFrame(loop);
+}
+function startStopWater() {
+  cancelAnimationFrame(water.raf); water.raf = 0; water.last = 0;
+  cancelAnimationFrame(floor.raf); floor.raf = 0; floor.last = 0;
+  const still = app.waterPaused || reduceMotion.matches || document.hidden;
+  if (still || !water.onScreen) drawWater(performance.now()); else water.raf = requestAnimationFrame(loop);
+  if (still) drawFloor(performance.now()); else floor.raf = requestAnimationFrame(floorLoop);
+}
+new IntersectionObserver(([e]) => { water.onScreen = e.isIntersecting; startStopWater(); }).observe(water.canvas);
+document.fonts.ready.then(() => { if (!water.raf) drawWater(performance.now()); });
+// Touch the water: moving over it leaves small ripples, a click or tap makes a splash
+function touchWater(e, big) {
+  if (!water.raf) return;                                              // not while paused or with reduced motion
+  const r = water.canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, g = sceneGeometry(), now = performance.now();
+  if (y < g.yW + 4) return;
+  const last = water.taps[water.taps.length - 1];
+  if (!big && last && now - last.t < 90 && Math.hypot(x - last.x, y - last.y) < 0.6 * g.u) return;
+  if (water.taps.length > 40) water.taps.shift();
+  water.taps.push({ x, y, t: now, big });
+  if (big) spray(x, y, 14, g.u, 2.6, 0);
+}
+water.canvas.addEventListener('pointermove', e => touchWater(e, false));
+water.canvas.addEventListener('pointerdown', e => touchWater(e, true));
+
+// ---------- Behind the cards: the same pool seen from above ----------
+// The floor scrolls at 60% of the page's speed, so the cards seem to float above it. Bubbles and
+// ripples are kept in page coordinates, so they move with the cards. Drawn at 1x pixel density and
+// about 30 frames a second, because it is soft and mostly covered.
+const floor = { canvas: $('#floor'), ctx: null, raf: 0, w: 0, h: 0, last: 0, drawn: 0, dirty: false, pending: 0, bubbles: [], rings: [] };
+floor.ctx = floor.canvas.getContext('2d');
+const FLOOR_LANE = 240, PARALLAX = 0.6, TILE = 44;
+function sizeFloor() { floor.w = floor.canvas.width = innerWidth; floor.h = floor.canvas.height = innerHeight; }
+
+// A swimmer's shadow seen from above, painted solid on a small canvas, head at (290, 80) facing right.
+// It is then drawn onto the floor blurred and see-through, so overlapping parts don't double up.
+const shadowCanvas = document.createElement('canvas');
+shadowCanvas.width = 380; shadowCanvas.height = 160;
+function shadowSwimmer(strokes, t, color) {
+  const x = shadowCanvas.getContext('2d');
+  x.clearRect(0, 0, 380, 160); x.save(); x.translate(290, 80); x.fillStyle = color;
+  x.beginPath(); x.ellipse(8, 0, 15, 13, 0, 0, Math.PI * 2); x.fill();                                  // head
+  smoothShape(x, [[-10, -18], [-30, -25], [-60, -21], [-90, -15], [-112, -16], [-125, -9], [-125, 9], [-112, 16], [-90, 15], [-60, 21], [-30, 25], [-10, 18]]);
+  for (const side of [-1, 1]) {
+    capsule(x, [-118, side * 7], [-205, side * (9 + 3 * Math.sin(t / 130 + side))], 8, 5);              // legs, kicking
+    const p = ((strokes + (side > 0 ? 0.5 : 0)) % 1 + 1) % 1, sh = [-24, side * 21];
+    let h, out;
+    if (p < 0.15) { h = [80, side * 12]; out = 4; }                                                        // stretched forward
+    else if (p < 0.6) { const q = (p - 0.15) / 0.45; h = [80 - 185 * q, side * (12 - 6 * Math.sin(Math.PI * q))]; out = 4; }   // pulling back under the body
+    else { const q = (p - 0.6) / 0.4; h = [-105 + 185 * q, side * (14 + 40 * Math.sin(Math.PI * q))]; out = 6 + 18 * Math.sin(Math.PI * q); }   // swinging forward out to the side
+    const e = [(sh[0] + h[0]) / 2, (sh[1] + h[1]) / 2 + side * out];
+    capsule(x, sh, e, 8, 6); capsule(x, e, h, 6, 5);
+  }
+  x.restore();
+  return shadowCanvas;
+}
+
+function drawFloor(t) {
+  const { ctx, w, h } = floor, c = water.colors, top = scrollY * PARALLAX;      // where the window is on the floor
+  const depth = Math.min(1, scrollY / Math.max(1, document.documentElement.scrollHeight - h));
+  const bg = ctx.createLinearGradient(0, 0, 0, h);                              // deeper colour further down the page
+  bg.addColorStop(0, mix(c.floor, c['floor-deep'], depth * 0.5)); bg.addColorStop(1, mix(c.floor, c['floor-deep'], 0.5 + depth * 0.5));
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+
+  ctx.strokeStyle = c['tile-line']; ctx.lineWidth = 1; ctx.beginPath();          // tiles
+  for (let x = (w / 2) % TILE; x < w; x += TILE) { ctx.moveTo(Math.round(x) + 0.5, 0); ctx.lineTo(Math.round(x) + 0.5, h); }
+  for (let y = -(top % TILE); y < h; y += TILE) { ctx.moveTo(0, Math.round(y) + 0.5); ctx.lineTo(w, Math.round(y) + 0.5); }
+  ctx.stroke();
+
+  const first = Math.max(0, Math.floor(top / FLOOR_LANE) - 1), last = Math.ceil((top + h) / FLOOR_LANE);
+  ctx.fillStyle = c.mark;                                                         // the lane lines, a T at each end
+  for (let k = first; k <= last; k++) {
+    const y = FLOOR_LANE * (k + 0.5) - top, x0 = 0.05 * w, x1 = 0.95 * w;
+    ctx.fillRect(x0, y - 8, x1 - x0, 16); ctx.fillRect(x0, y - 45, 16, 90); ctx.fillRect(x1 - 16, y - 45, 16, 90);
+  }
+
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = water.caustics;   // light on the floor, the same tile as the header
+  for (const [sc, vx, vy, a] of [[1.3, 0.01, 0.006, 0.12], [1.75, -0.008, 0.007, 0.08]]) {
+    const span = 200 * sc, ox = (t * vx) % span, oy = (t * vy - top) % span;
+    ctx.save(); ctx.translate(ox, oy); ctx.scale(sc, sc); ctx.globalAlpha = a * c.glow;
+    ctx.fillRect(-ox / sc - 200, -oy / sc - 200, w / sc + 400, h / sc + 400);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // Swimmers passing overhead: every so often a shadow glides along a lane, one way then the other
+  for (let k = first; k <= last; k++) {
+    const P = 30000 + rnd(k + 500) * 20000, speed = 0.1, cross = (w + 500) / speed, tt = t + rnd(k + 510) * P, n = Math.floor(tt / P), tau = tt - n * P;
+    if (tau >= cross) continue;
+    const dir = n % 2 ? -1 : 1, x = dir > 0 ? -250 + speed * tau : w + 250 - speed * tau;
+    ctx.save(); ctx.translate(x, FLOOR_LANE * (k + 0.5) - top - 34); ctx.scale(1.35 * dir, 1.35);
+    ctx.filter = 'blur(3px)'; ctx.globalAlpha = c['shadow-a'];
+    ctx.drawImage(shadowSwimmer(tt / STROKE_MS, t, c.shade), -290, -80);
+    ctx.restore();
+  }
+
+  ctx.lineWidth = 3;                                                               // ripples from capacity changes
+  for (const r of floor.rings) {
+    const a = (t - r.t) / 2600, rad = a * Math.max(w, h) * 0.8, y = r.y - scrollY;
+    if (a <= 0 || a >= 1) continue;
+    ctx.strokeStyle = c.shade; ctx.globalAlpha = 0.12 * (1 - a) ** 2; ctx.beginPath(); ctx.arc(r.x, y, Math.max(0, rad - 5), 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = c.light; ctx.globalAlpha = 0.5 * (1 - a) ** 2; ctx.beginPath(); ctx.arc(r.x, y, rad, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.lineWidth = 1;
+  for (const b of floor.bubbles) {                                                 // bubbles
+    if (b.born > t) continue;
+    const x = b.x + Math.sin(b.ph + t / 400) * 1.5, y = b.y - scrollY;
+    ctx.globalAlpha = 0.6; ctx.strokeStyle = c.light; ctx.beginPath(); ctx.arc(x, y, b.r, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 0.12; ctx.fillStyle = c.light; ctx.fill();
+    ctx.globalAlpha = 0.8; blob(ctx, x - b.r * 0.35, y - b.r * 0.35, b.r * 0.3);
+  }
+  ctx.globalAlpha = 1;
+}
+function stepFloor(t) {
+  const dt = floor.last ? Math.min(0.1, (t - floor.last) / 1000) : 0;
+  floor.last = t;
+  if (Math.random() < dt * 1.5 && floor.bubbles.length < 250)                      // now and then one rises from below
+    floor.bubbles.push({ x: Math.random() * floor.w, y: scrollY + floor.h + 10, r: 1.5 + Math.random() * 4, ph: Math.random() * 6, born: 0 });
+  for (const b of floor.bubbles) if (b.born <= t) b.y -= (25 + 12 * b.r) * dt;
+  floor.bubbles = floor.bubbles.filter(b => b.y - scrollY > -20);
+  floor.rings = floor.rings.filter(r => t - r.t < 2600);
+}
+function floorLoop(t) {
+  if (floor.dirty || t - floor.drawn >= 32) { stepFloor(t); drawFloor(t); floor.drawn = t; floor.dirty = false; }
+  floor.raf = requestAnimationFrame(floorLoop);
+}
+// The pool answers the app: bubbles up beside a panel, or a ripple spreading out from one
+function bubblesBeside(el, n, spread) {
+  if (!floor.raf || !el) return;
+  const r = el.getBoundingClientRect(), p = (el.closest('.panel') || el).getBoundingClientRect(), now = performance.now();
+  for (let k = 0; k < n && floor.bubbles.length < 250; k++) {
+    const x = k % 2 ? p.right + 4 + Math.random() * 10 : p.left - 4 - Math.random() * 10;
+    floor.bubbles.push({ x, y: r.top + Math.random() * r.height + scrollY, r: 1.5 + Math.random() * 4, ph: Math.random() * 6, born: now + Math.random() * spread });
+  }
+}
+function ringFrom(el) {
+  if (!floor.raf || !el) return;
+  const r = el.getBoundingClientRect();
+  floor.rings.push({ x: r.left + r.width / 2, y: r.top + r.height / 2 + scrollY, t: performance.now() });
+}
+addEventListener('scroll', () => {
+  if (floor.raf) floor.dirty = true;
+  else if (!floor.pending) floor.pending = requestAnimationFrame(() => { floor.pending = 0; drawFloor(performance.now()); });
+}, { passive: true });
+
+function applyTheme() {
+  const dark = app.theme === 'dark' || (app.theme === 'device' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  readWaterColors();
+  startStopWater();
+  renderToolbar();
+}
+
+// ---------- Events ----------
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const a = el.dataset.action, sid = +el.dataset.sid, bid = +el.dataset.bid;
+  if (a === 'tab') { app.tab = el.dataset.value; renderSwimmer(); }
+  else if (a === 'book') book(sid);
+  else if (a === 'check') book(sid, app.flows[flowId(app.swimmer, sid)].key);
+  else if (a === 'pass') {
+    const b = app.mine.find(x => x.session_id === sid && x.status === 'confirmed');
+    app.tab = 'bookings'; app.passOpen = b ? b.booking_id : null; renderSwimmer();
+    if (b) { const card = $('#pass-' + b.booking_id); if (card) card.scrollIntoView({ block: 'nearest', behavior: reduceMotion.matches ? 'auto' : 'smooth' }); }
+  }
+  else if (a === 'cancel') { const st = app.cancels[bid]; if (!st || !['cancelling', 'checking'].includes(st.kind)) cancelBooking(bid); }
+  else if (a === 'select') { app.selected = sid; app.preview = null; app.picked = null; app.confirmClose = false; app.opResult = null; app.opError = ''; renderSwimmer(); renderOperator(); }
+  else if (a === 'bead') { app.picked = bid; renderOperator(); }
+  else if (a === 'apply') applyCapacity();
+  else if (a === 'close-ask') { app.confirmClose = true; app.opError = ''; renderOperator(); const c = $('[data-fid="close-confirm"]'); if (c) c.focus(); }
+  else if (a === 'close-keep') { app.confirmClose = false; renderOperator(); }
+  else if (a === 'close-confirm') closeSession();
+  else if (a === 'theme') { app.theme = el.dataset.value; store.set('theme', app.theme); applyTheme(); }
+  else if (a === 'water') { app.waterPaused = !app.waterPaused; store.set('water', app.waterPaused ? 'off' : 'on'); startStopWater(); renderToolbar(); }
+  else if (a === 'blitz') blitz();
+  else if (a === 'lose') { server.loseNextReply = true; renderToolbar(); renderScenes(); demoBooking('The next booking will be saved, but its reply will be lost.'); }
+  else if (a === 'dbdown') { server.dbDownUntil = Date.now() + 10000; renderToolbar(); renderScenes(); demoBooking('The database is down for 10 seconds.'); }
+  else if (a === 'lock') { server.rowLock = !server.rowLock; renderToolbar(); renderScenes(); }
+  else if (a === 'reset') {
+    seed(); server.rowLock = true; server.dbDownUntil = 0; server.loseNextReply = false;
+    Object.assign(app, { flows: {}, cancels: {}, passOpen: null, preview: null, picked: null, confirmClose: false, opResult: null, opError: '', blitz: null });
+    requests.length = 0; $('#op-reason').value = '';
+    setTimeout(() => { refresh(); renderAll(); }, 120);
+  }
+});
+
+$('#op-slider').addEventListener('input', e => { app.preview = +e.target.value; app.opError = ''; app.opResult = null; renderOperator(); });
+$('#op-reason').addEventListener('input', () => { if (app.opError) { app.opError = ''; $('#op-error').textContent = ''; } });
+$('#op-session').addEventListener('change', e => { app.selected = +e.target.value; app.preview = null; app.picked = null; app.confirmClose = false; app.opResult = null; app.opError = ''; renderSwimmer(); renderOperator(); });
+$('#swimmer').addEventListener('change', e => { app.swimmer = e.target.value; store.set('swimmer', app.swimmer); app.passOpen = null; app.mine = []; app.notices = []; refresh(); });
+document.addEventListener('visibilitychange', startStopWater);
+reduceMotion.addEventListener('change', startStopWater);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (app.theme === 'device') applyTheme(); });
+addEventListener('resize', () => { sizeWater(); sizeFloor(); if (!water.raf) drawWater(performance.now()); if (!floor.raf) drawFloor(performance.now()); });
+addEventListener('load', drawQRs);
+
+// ---------- Start ----------
+$('#swimmer').innerHTML = Array.from({ length: 12 }, (_, i) => `swimmer-${pad(i + 1)}`).map(w => `<option${w === app.swimmer ? ' selected' : ''}>${w}</option>`).join('');
+$('#op-session').innerHTML = SESSIONS.map(s => `<option value="${s.id}">${s.time} ${esc(s.name)}</option>`).join('');
+seed();
+sizeWater();
+sizeFloor();
+applyTheme();
+renderAll();
+setTimeout(refresh, 120);
+setInterval(refresh, 5000);
+setInterval(() => { if (server.dbDownUntil && Date.now() < server.dbDownUntil + 1000) { renderToolbar(); renderScenes(); } }, 500);
+</script>
+</body>
+</html>
