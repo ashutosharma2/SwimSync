@@ -11,7 +11,7 @@ A lifeguard calls in sick, and the pool has to drop a session from 10 places to 
 
 - `CHECK (booked <= capacity)` ([ADR-001](001-session-row-lock.md)) refuses any capacity below the number booked, so someone has to lose their place in the same step.
 - Bookings can arrive while the cut is happening.
-- A confirmed booking must keep meaning a place. Nine confirmed bookings for 8 places is the exact situation SwimSync was built against.
+- A confirmed booking must keep meaning a place. Nine confirmed bookings for 8 places is the situation SwimSync was built to prevent.
 - The swimmers who lose their place have to be told, and the change has to be traceable.
 
 ## Action
@@ -29,8 +29,8 @@ Alternatives considered:
 
 - **Oldest first.** Punishes the people who planned ahead.
 - **Random.** Unpredictable, and hard to explain to a swimmer or to test.
-- **Mark bookings "at risk" and let the desk decide later.** Leaves confirmed bookings that may not mean a place, which is the problem SwimSync exists to remove.
-- **Refuse cuts below the number booked.** Safe for the system, but the pool still can't take those swimmers. The problem just moves to the desk.
+- **Mark bookings "at risk" and let the desk decide later.** Leaves confirmed bookings that may not mean a place.
+- **Refuse cuts below the number booked.** Safe for the system, but the pool still can't take those swimmers, so the problem moves to the front desk.
 
 ## Result
 

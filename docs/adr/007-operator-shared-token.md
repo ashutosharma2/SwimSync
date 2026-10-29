@@ -16,14 +16,14 @@ Only the pool should be able to change a session's capacity or close it ([ADR-00
 ## Action
 
 - The operator endpoints need an `X-Operator-Token` header matching `SWIMSYNC_OPERATOR_TOKEN`, compared with `hmac.compare_digest`, which takes the same time wherever the strings differ.
-- If the environment variable isn't set, every operator request is refused with 403. The default is closed.
+- If the environment variable isn't set, every operator request is refused with 403, so the endpoints are closed by default.
 - Inputs are bounded: a capacity from 1 to 500, and a reason of 1 to 200 characters, required for every change.
 - The audit log records the actor as `operator`, because one shared secret can't say which person made the change.
 - The token is set when the app starts and never written in the code or the repo.
 
 Alternatives considered:
 
-- **No protection, since it's a demo.** The endpoints cancel real bookings. Even a demo shouldn't leave that open.
+- **No protection, since it's a demo.** The endpoints cancel real bookings, which even a demo shouldn't leave open.
 - **HTTP basic auth.** The same shared secret with more ceremony.
 - **A real identity provider now.** The right end state, but it adds a service and setup, and changes none of the booking guarantees this project is about.
 - **Restrict by network.** Doesn't apply to a local demo, and still isn't identity.

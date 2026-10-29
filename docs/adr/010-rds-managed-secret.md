@@ -10,7 +10,7 @@ The app needs to log in to the private RDS PostgreSQL database ([ADR-008](008-aw
 ## Obstacle
 
 - A password passed to Terraform as a variable is stored in Terraform state in plain text.
-- IAM database authentication avoids passwords, but the RDS docs say: "You must have between 300 and 1000 MiB extra memory on your database for reliable connectivity" ([IAM database authentication](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html), checked 2026-10-29). On the smallest instance classes, that's a large share of the memory.
+- IAM database authentication avoids passwords, but the RDS docs say: "You must have between 300 and 1000 MiB extra memory on your database for reliable connectivity" ([IAM database authentication](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html), checked 2026-10-29).
 
 ## Action
 

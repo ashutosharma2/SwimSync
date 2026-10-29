@@ -11,7 +11,7 @@ A swimming session has a fixed number of places. When several swimmers ask for t
 
 The obvious code reads how many places are taken, checks there's room and inserts a booking. Two requests can both read "one place left" before either inserts, and both get confirmed. Nothing in the read stops the second request.
 
-The fix has to hold under real concurrency, be easy to explain, and not turn every busy moment into errors for swimmers.
+The fix has to hold under real concurrency without turning every busy moment into errors for swimmers.
 
 ## Action
 
@@ -43,4 +43,4 @@ Alternatives considered:
 
 ## Troubleshooting
 
-- None while building it. The lock-removed runs were a deliberate check that the tests can fail, not a bug.
+- None while building it. The runs with the lock removed were a deliberate check that the tests can fail.

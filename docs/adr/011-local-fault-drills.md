@@ -5,7 +5,7 @@
 
 ## Scenario
 
-SwimSync's guarantees have to hold when things fail: an app instance dying mid-request, or the database going down, slowing down or losing the reply to a commit. Tests prove the logic. Drills show what happens when real processes and connections fail. All of it has to cost ₹0.
+SwimSync's guarantees have to hold when things fail: an app instance dying mid-request, or the database going down, slowing down or losing the reply to a commit. Tests prove the logic, and drills show what happens when real processes and connections fail. All of it has to cost ₹0.
 
 ## Obstacle
 

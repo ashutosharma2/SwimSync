@@ -40,7 +40,5 @@ Alternatives considered:
 
 ## Troubleshooting
 
-- **The worker died with the database.** Drill B's first run (2026-10-25) passed every hard limit, but the outbox worker crashed when the database went down and never restarted. 258 notices waited in the outbox. None were lost, because they were stored safely.
-- **Cause:** a database connection error was raised outside the code that handles delivery failures, so it ended the worker's loop.
-- **Fix** (b020f1c): the worker treats a database error as the database's problem, not the notice's, so the row's attempts aren't used up. It backs off, up to 30 s between tries, and carries on when the database returns. A new test covers it, and the rerun delivered all 473 notices.
-- **Lesson:** a drill can pass its checks while the system is clearly unhealthy. The recorded measurements matter as much as the pass marks.
+- **The worker died with the database.** Drill B's first run (2026-10-25) passed every hard limit, but the outbox worker crashed when the database went down and never restarted. 258 notices waited in the outbox, and none were lost because they were stored safely. A database connection error had been raised outside the code that handles delivery failures, so it ended the worker's loop. The fix (b020f1c) treats a database error as the database's problem rather than the notice's, so the row's attempts aren't used up: the worker backs off, up to 30 s between tries, and carries on when the database returns. A new test covers it, and the rerun delivered all 473 notices.
+- **Lesson:** a drill can pass its checks while the system is clearly unhealthy, so the recorded measurements matter as much as the pass marks.

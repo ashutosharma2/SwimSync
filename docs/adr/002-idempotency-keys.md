@@ -34,7 +34,7 @@ Alternatives considered:
 
 - **Deduplicate only by swimmer and session.** Simpler, but a retry can't get back the original answer, and a "full" retry could quietly turn into a booking.
 - **Server-generated request ids.** The app only learns the id from the reply, which is the thing that gets lost.
-- **No automatic retries.** Leaves the swimmer guessing after every lost reply, which is the problem SwimSync exists to solve.
+- **No automatic retries.** Leaves the swimmer guessing after every lost reply.
 
 ## Result
 

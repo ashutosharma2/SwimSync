@@ -10,7 +10,7 @@ After tapping Book, a swimmer reads one line and acts on it: goes to the pool, o
 ## Obstacle
 
 - A timeout doesn't mean the booking failed. The server may have saved it after the app stopped waiting.
-- Saying "failed" after a lost reply could make a swimmer book twice, or skip a swim they actually have. Saying "booked" without the server's word is the false promise SwimSync exists to prevent.
+- Saying "failed" after a lost reply could make a swimmer book twice, or skip a swim they actually have. Saying "booked" without the server's word is a promise the app can't back up.
 
 ## Action
 
@@ -26,12 +26,12 @@ The Book and Cancel rules live in [bookingFlow.ts](../../frontend/src/bookingFlo
 Alternatives considered:
 
 - **Show an error and let the swimmer try again.** The new tap would carry a new key and could book twice, and the swimmer would be told "failed" when they might be booked.
-- **Optimistic UI.** Showing "booked" straight away breaks the one rule that matters here.
+- **Optimistic UI.** Showing "booked" straight away claims a place before the server has given one.
 
 ## Result
 
 - 16 tests cover it ([bookingFlow.test.ts](../../frontend/src/bookingFlow.test.ts)): no "booked" before the server confirms, the same key on every retry and after a reload, "unavailable" after an uncertain answer still treated as uncertain, a closed session treated as final, and My bookings deciding when the retries run out.
-- The worst case is an honest "we couldn't confirm yet", with a button that's safe to press, not a wrong answer.
+- In the worst case the swimmer sees an honest "we couldn't confirm yet" and a button that's safe to press.
 
 ## Troubleshooting
 

@@ -18,7 +18,7 @@ The database can be down, slow, or lose the reply to a commit. In each case the 
 Every booking change goes through one function that commits explicitly, so the code knows which side of the commit a failure happened on:
 
 - **Can't connect, or a failure before the commit** (including statement and lock timeouts): PostgreSQL rolls the transaction back, so nothing changed. The answer is `503 database_unavailable` with `booked: false` (or `cancelled: false`).
-- **A failure during the commit:** the change may or may not have been saved. The answer is `503 outcome_unknown`: never yes, never no. The app retries with the same key ([ADR-002](002-idempotency-keys.md)) or checks My bookings.
+- **A failure during the commit:** the change may or may not have been saved. The answer is `503 outcome_unknown`, which says neither yes nor no. The app retries with the same key ([ADR-002](002-idempotency-keys.md)) or checks My bookings.
 - Both carry `Retry-After: 1`. Reads answer `database_unavailable` too.
 
 The timeouts are a 2 s connect, a 500 ms statement and a 500 ms lock wait, well inside a client's patience. libpq rounds connect timeouts below 2 s up to 2 s (measured on 2026-10-24 with libpq 18.6), so the code asks for what it actually gets.
@@ -29,7 +29,7 @@ Alternatives considered:
 
 - **One 503 for every failure.** The app couldn't tell "nothing saved" from "maybe saved", so it would have to treat every failure as "maybe" and could never say "not booked".
 - **Retry inside the API before answering.** Holds the request open longer, and retrying after a lost commit is only safe with the idempotency key, which the app already sends.
-- **Two-phase commit.** It coordinates two databases. Here there's one database, and the uncertainty is in the network.
+- **Two-phase commit.** It coordinates a commit across several databases, but here there's one database and the uncertainty is in the network.
 
 ## Result
 
@@ -39,4 +39,4 @@ Alternatives considered:
 
 ## Troubleshooting
 
-- **Part of the prediction was wrong.** Before drill B, the prediction expected requests to back up for a few seconds after the slow phase ended. There was no backlog. The added latency also pushed new connections past the 2 s connect timeout, so most slow-phase requests never got as far as holding a lock.
+- **Part of the prediction was wrong.** Before drill B, the prediction expected requests to back up for a few seconds after the slow phase ended. There was no backlog. The added latency also pushed new connections past the 2 s connect timeout.

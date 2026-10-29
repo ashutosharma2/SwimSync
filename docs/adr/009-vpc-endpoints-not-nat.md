@@ -29,7 +29,7 @@ Alternatives considered:
 
 - The instances can reach only the services they need, and nothing on the internet.
 - No package downloads at boot: the app and its dependencies have to be baked into the machine image.
-- The cost is similar, not lower. With the US East example prices recorded in [initial-research.md](../research/initial-research.md) on 2026-10-21 ($0.01 an hour per interface endpoint per zone; $0.045 an hour plus $0.045 per GB for a NAT gateway), three endpoints in two zones come to $0.06 an hour. That's more than one NAT gateway, and less than one per zone ($0.09). Recheck the prices for ap-south-1 before relying on them. The choice rests on security and access, not price.
+- The cost is about the same. With the US East example prices recorded in [initial-research.md](../research/initial-research.md) on 2026-10-21 ($0.01 an hour per interface endpoint per zone; $0.045 an hour plus $0.045 per GB for a NAT gateway), three endpoints in two zones come to $0.06 an hour. That's more than one NAT gateway, and less than one per zone ($0.09). Recheck the prices for ap-south-1 before relying on them. On price the two options are close, so the choice comes down to security and access.
 
 ## Troubleshooting
 
