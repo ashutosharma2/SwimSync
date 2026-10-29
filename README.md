@@ -160,6 +160,24 @@ Then open http://127.0.0.1:8088. The API is also reachable at http://127.0.0.1:8
 
 [ADR-014](docs/adr/014-docker-compose-beside-native.md) explains why it's set up this way.
 
+### With Kubernetes (kind)
+
+This runs the same images on a one-node local cluster. You need Docker, [kind](https://kind.sigs.k8s.io/) (`brew install kind`) and `kubectl`, which comes with Docker Desktop.
+
+```bash
+cd ~/projects/swimsync
+scripts/k8s-up.sh
+```
+
+Then open http://127.0.0.1:8089. Run `scripts/k8s-smoke.sh` to check a booking end to end.
+
+- The API runs as two pods, and the `X-Instance` header on each answer names the pod that sent it.
+- Every run of the script reseeds the database. `SWIMSYNC_TZ` and `SWIMSYNC_OPERATOR_TOKEN` work as they do with Docker Compose.
+- To watch Kubernetes replace a pod, list the pods with `kubectl --context kind-swimsync -n swimsync get pods`, then delete one of the API pods with `kubectl --context kind-swimsync -n swimsync delete pod <name>` and list them again.
+- Remove the cluster with `kind delete cluster --name swimsync`.
+
+[ADR-015](docs/adr/015-local-kubernetes-with-kind.md) explains why it's set up this way, and what it does and doesn't show.
+
 ### Native
 
 Tested on macOS with Homebrew, PostgreSQL 18, Python 3.14 and Node 26. A new terminal opens in your home folder, where `.venv/bin/uvicorn` doesn't exist, so every block below starts with `cd ~/projects/swimsync`. Change the path if you cloned the repo somewhere else.
@@ -227,7 +245,7 @@ To simulate a notification outage, start the worker with `SWIMSYNC_ADAPTER_FAILI
 npm --prefix frontend test
 ```
 
-The backend tests use the `swimsync_test` database (override with `TEST_DATABASE_URL`). Result on 2026-10-29: 45 backend tests and 16 frontend tests passed, locally and in GitHub Actions. The [workflow](.github/workflows/tests.yml) runs both suites against PostgreSQL 18, builds the frontend and both Docker images, and runs `terraform validate` on every push to main.
+The backend tests use the `swimsync_test` database (override with `TEST_DATABASE_URL`). Result on 2026-10-29: 45 backend tests and 16 frontend tests passed, locally and in GitHub Actions. The [workflow](.github/workflows/tests.yml) runs both suites against PostgreSQL 18, builds the frontend and both Docker images, deploys them to a throwaway kind cluster and books through it, and runs `terraform validate` on every push to main.
 
 | File | What it proves |
 |---|---|
@@ -272,6 +290,7 @@ The whole project has to cost ₹0. Credits and free trials don't count, because
 | HAProxy, Toxiproxy (for the drills) | ₹0 | Open-source; Toxiproxy is MIT-licensed |
 | Terraform CLI | ₹0 | BSL; HashiCorp's licence FAQ says personal use is unaffected (checked 2026-10-21). OpenTofu is the fallback |
 | Docker Desktop and the container images (optional) | ₹0 | Docker Desktop is free for personal use, education and small businesses ([licence](https://docs.docker.com/subscription/desktop-license/), checked 2026-10-21). The base images are official Docker Hub images, pulled without an account |
+| kind (optional) | ₹0 | Open source (Apache 2.0). The cluster runs inside Docker on this machine; nothing runs on AWS |
 | GitHub Free, private repo | ₹0 | Actions minutes are blocked, not billed, without a payment method (GitHub docs, checked 2026-10-21) |
 | AWS | Not used | My account is on the Paid plan, which bills automatically once credits run out. The Terraform is validated locally and never applied |
 
@@ -316,6 +335,12 @@ If you used Docker:
 cd ~/projects/swimsync
 docker compose down
 docker image rm swimsync-backend swimsync-web
+```
+
+If you used kind:
+
+```bash
+kind delete cluster --name swimsync
 ```
 
 Stop the API, the frontend and the worker with Ctrl+C.

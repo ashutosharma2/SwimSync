@@ -74,6 +74,20 @@ jobs:
       # broke it. Nothing is pushed anywhere and nothing is started.
       - run: docker compose build
 
+  kubernetes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      # kind 0.33.0, checked against its published checksum. Docker and kubectl come with the runner.
+      - run: |
+          curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
+          curl -fsSL https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64.sha256sum | sed 's/kind-linux-amd64/kind/' | sha256sum -c -
+          sudo install kind /usr/local/bin/kind
+      # A throwaway cluster on the runner: deploy SwimSync, then book through it. Nothing is pushed.
+      - run: scripts/k8s-up.sh
+      - run: scripts/k8s-smoke.sh
+
   terraform:
     runs-on: ubuntu-latest
     timeout-minutes: 10

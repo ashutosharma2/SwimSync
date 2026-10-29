@@ -1,0 +1,25 @@
+# Reseeds the database with six fictional sessions for tomorrow. The time zone comes from the
+# settings ConfigMap that scripts/k8s-up.sh creates from SWIMSYNC_TZ, because containers run in UTC.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed
+  namespace: swimsync
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: swimsync-backend:latest
+          imagePullPolicy: Never # copied into the cluster with kind load, never pulled
+          command: ["python", "scripts/seed.py"]
+          env:
+            - name: DATABASE_URL
+              value: postgresql://swimsync@db:5432/swimsync
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: settings
+                  key: TZ

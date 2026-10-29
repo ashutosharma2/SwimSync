@@ -1,0 +1,60 @@
+# PostgreSQL for the local cluster. The data lives in the pod (emptyDir), because every start
+# reseeds anyway. The db Service is a ClusterIP, reachable only from inside the cluster, so the
+# database trusts connections and no password exists anywhere.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: swimsync
+spec:
+  selector:
+    app: db
+  ports:
+    - port: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: swimsync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18.6 # the version the drills ran on
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_DB
+              value: swimsync
+            - name: POSTGRES_USER
+              value: swimsync
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: trust
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            # Over TCP: during first start the image runs a temporary server on the local socket
+            # only, so this succeeds only once the real server is listening.
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "swimsync", "-d", "swimsync"]
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
+      volumes:
+        - name: data
+          emptyDir: {}

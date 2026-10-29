@@ -1,0 +1,12 @@
+# A one-node local cluster for SwimSync. The web Service's node port (30080) is published on
+# 127.0.0.1:8089, clear of the native setup (8001, 5173), the drills (8080) and compose (8088, 8002).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: swimsync
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8089
+        listenAddress: "127.0.0.1"
+        protocol: TCP
