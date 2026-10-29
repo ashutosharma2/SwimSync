@@ -5,7 +5,7 @@
 - **Scenario:** SwimSync books places in fictional swimming sessions so that a confirmed booking always means a reserved place, motivated by being turned away from a booked swim.
 - **Obstacle:** the guarantees live in a few lines of SQL inside transactions, plus a worker that runs separately. Without pictures it's hard to see where the lock is held, what's in each transaction and which process does what.
 - **Action:** one diagram per view, drawn from the code as it is today. Solid lines and boxes are built; dashed ones are planned.
-- **Result:** you can follow a booking from the request to the committed row, see two swimmers race for the last place, and see how a notification reaches the inbox even when delivery fails.
+- **Result:** you can follow a booking from the request to the committed row, see two swimmers race for the last place, see which bookings a capacity cut cancels, and see how a notification reaches the inbox even when delivery fails.
 - **Troubleshooting:** the diagrams are only useful while they're accurate, so they're updated at the end of every phase, alongside the README.
 
 **Contents**
@@ -18,26 +18,28 @@
 6. [Two swimmers, one place](#6-two-swimmers-one-place)
 7. [Retry after a lost response](#7-retry-after-a-lost-response)
 8. [Cancelling exactly once](#8-cancelling-exactly-once)
-9. [Booking states](#9-booking-states)
-10. [Notification delivery](#10-notification-delivery)
-11. [Drill A: instance failure](#11-drill-a-instance-failure)
-12. [Drill B: database connectivity (planned)](#12-drill-b-database-connectivity-planned)
-13. [Trust boundaries](#13-trust-boundaries)
-14. [AWS infrastructure (designed, never deployed)](#14-aws-infrastructure-designed-never-deployed)
-15. [AWS security groups](#15-aws-security-groups)
-16. [Admin access and the database password](#16-admin-access-and-the-database-password)
+9. [Operator capacity changes](#9-operator-capacity-changes)
+10. [Booking states](#10-booking-states)
+11. [Notification delivery](#11-notification-delivery)
+12. [Drill A: instance failure](#12-drill-a-instance-failure)
+13. [Drill B: database connectivity](#13-drill-b-database-connectivity)
+14. [Trust boundaries](#14-trust-boundaries)
+15. [AWS infrastructure (designed, never deployed)](#15-aws-infrastructure-designed-never-deployed)
+16. [AWS security groups](#16-aws-security-groups)
+17. [Admin access and the database password](#17-admin-access-and-the-database-password)
 
 ---
 
 ## 1. System context
 
-Who and what SwimSync deals with. The pool's front desk sits outside SwimSync: walk-ins and members admitted at the desk don't go through it, which is a known limitation, not something the MVP handles.
+Who and what SwimSync deals with. The pool's front desk sits outside SwimSync: walk-ins and members admitted at the desk don't go through it, which is a known limitation, not something the MVP handles. Operators change capacity through the API with a shared token; their own screen and sign-in are planned.
 
 ```mermaid
 flowchart LR
     Swimmer(["Swimmer"])
     Operator(["Pool operator"])
     Desk(["Front desk<br/>walk-ins, members"])
+    OpUI["Operator screen<br/>and sign-in"]
 
     subgraph SwimSync["SwimSync (local)"]
         API["Booking API"]
@@ -46,10 +48,11 @@ flowchart LR
 
     Swimmer -- "browse, book, cancel,<br/>my bookings, inbox" --> API
     Worker -- "notices in the in-app inbox" --> Swimmer
-    Operator -. "sessions and capacity<br/>(seed script for now)" .-> API
+    Operator -- "cut capacity, close a session<br/>(X-Operator-Token)" --> API
+    Operator -. "planned" .-> OpUI
     Desk -. "not connected:<br/>known limitation" .- Operator
 
-    class Operator,Desk planned
+    class Desk,OpUI planned
     classDef planned stroke-dasharray: 5 5
 ```
 
@@ -59,43 +62,46 @@ The processes that run on one machine and how they talk. Everything listens on l
 
 ```mermaid
 flowchart LR
-    Client["Client<br/>curl, tests, drill load script"]
-    UI["React + Tailwind app<br/>(planned)"]
+    Browser["Browser"]
+    Client["curl, tests,<br/>drill load scripts"]
 
     subgraph Local["Local machine"]
+        UI["React + Tailwind app<br/>Vite dev server :5173"]
         API["Booking API<br/>FastAPI + uvicorn :8001"]
         Worker["Outbox worker<br/>scripts/outbox_worker.py"]
         Adapter["Simulated in-app adapter<br/>can be switched to fail"]
         PG[("PostgreSQL 18<br/>localhost only")]
     end
 
+    Browser --> UI
+    UI -- "/api/* proxied" --> API
     Client -- "HTTP JSON" --> API
-    UI -.-> API
-    API -- "one transaction per request" --> PG
+    API -- "one transaction per change" --> PG
     Worker -- "claims due outbox rows" --> PG
     Worker --> Adapter
     Adapter -- "inserts inbox row<br/>(own transaction)" --> PG
-
-    class UI planned
-    classDef planned stroke-dasharray: 5 5
 ```
 
 ## 3. API components
 
-How the backend code is split. `booking.py` holds every rule and never commits; the caller's `with db.connect()` block decides when the transaction ends.
+How the backend code is split. `booking.py` and `operator.py` hold the rules and never commit. `run_change` in `main.py` commits explicitly, so it can tell a failure before the commit (rolled back, nothing changed) from a failure during it (outcome unknown).
 
 ```mermaid
 flowchart TB
-    Main["main.py<br/>routes, header checks,<br/>/health, X-Instance"]
+    Main["main.py<br/>routes, header and token checks,<br/>run_change: explicit commit,<br/>/health, X-Instance"]
     Booking["booking.py<br/>book, cancel, my_bookings,<br/>my_notifications"]
-    DB["db.py<br/>connect(): commit on success,<br/>roll back on error"]
+    Operator["operator.py<br/>set_capacity, close_session,<br/>audit"]
+    DB["db.py<br/>connect(): 2 s connect,<br/>500 ms statement and lock timeouts"]
     Outbox["outbox.py<br/>deliver_one, backoff,<br/>run_forever"]
     Adapters["adapters.py<br/>InAppAdapter"]
     PG[("PostgreSQL")]
 
     Main --> Booking
+    Main --> Operator
     Main --> DB
+    Operator -- "queues notices with" --> Booking
     Booking -- "SQL inside the caller's transaction" --> PG
+    Operator -- "SQL inside the caller's transaction" --> PG
     DB --> PG
     Outbox --> DB
     Outbox --> Adapters
@@ -104,12 +110,13 @@ flowchart TB
 
 ## 4. Data model
 
-The five tables in `db/schema.sql`. The `booked` counter on `sessions` is changed only in the same transaction as the booking row it counts.
+The six tables in `db/schema.sql`. The `booked` counter on `sessions` is changed only in the same transaction as the booking row it counts.
 
 ```mermaid
 erDiagram
     sessions ||--o{ bookings : "has"
     sessions ||--o{ idempotency_keys : "requested for"
+    sessions ||--o{ audit_log : "changed by"
     bookings ||--o{ outbox : "announced by"
     outbox ||--o| notifications : "delivered as"
 
@@ -119,6 +126,7 @@ erDiagram
         timestamptz starts_at
         int capacity "greater than 0"
         int booked "CHECK 0 to capacity"
+        text status "open or closed"
     }
     bookings {
         bigint id PK
@@ -127,6 +135,18 @@ erDiagram
         text status "confirmed or cancelled"
         timestamptz created_at
         timestamptz cancelled_at
+        text cancel_reason "swimmer, capacity_reduced, session_closed"
+    }
+    audit_log {
+        bigint id PK
+        timestamptz at
+        text actor
+        text action "capacity_changed or session_closed"
+        bigint session_id FK
+        text reason
+        jsonb before
+        jsonb after
+        bigint_array affected_booking_ids
     }
     idempotency_keys {
         text swimmer_id PK
@@ -152,7 +172,7 @@ erDiagram
     }
 ```
 
-Two rules aren't visible in the diagram: a unique index allows one `confirmed` booking per swimmer per session, and `notifications.outbox_id` is unique, so one outbox row can only ever make one inbox entry.
+Three rules aren't visible in the diagram: a unique index allows one `confirmed` booking per swimmer per session, `notifications.outbox_id` is unique, so one outbox row can only ever make one inbox entry, and a `CHECK` makes `cancel_reason` present exactly when a booking is cancelled.
 
 ## 5. Booking a place
 
@@ -173,7 +193,7 @@ sequenceDiagram
         DB-->>A: stored answer
         A->>DB: COMMIT
         A-->>C: 200 with the first answer (nothing new booked)
-    else already booked, or session full
+    else already booked, session closed, or full
         A->>DB: store 409 under the key
         A->>DB: COMMIT
         A-->>C: 409
@@ -236,25 +256,82 @@ flowchart TD
     Find -- yes --> Lock["lock the session row<br/>(same lock as booking)"]
     Lock --> Status{"status now?"}
     Status -- cancelled --> Already["200 already_cancelled: true<br/>nothing released"]
-    Status -- confirmed --> Release["set cancelled,<br/>booked = booked - 1,<br/>outbox row booking_cancelled"]
+    Status -- confirmed --> Release["set cancelled (reason swimmer),<br/>booked = booked - 1,<br/>outbox row booking_cancelled"]
     Release --> Commit["COMMIT, 200"]
 ```
 
-## 9. Booking states
+## 9. Operator capacity changes
 
-There is no "pending" state: a request either reserves a place and becomes `confirmed` in one transaction, or it's rejected. That removes the gap between "shown as booked" and "actually reserved".
+`POST /operator/sessions/{id}/capacity` with `X-Operator-Token` and a body such as `{"capacity": 3, "reason": "one lifeguard off sick"}`. The cut takes the same session-row lock as booking and cancelling. Bookings that no longer fit are cancelled newest first, so the people who booked earliest keep their places. The cancellations, their notices, the new capacity and the audit row are one transaction: they commit together or not at all.
+
+```mermaid
+sequenceDiagram
+    participant Op as Operator
+    participant A as API
+    participant DB as PostgreSQL
+
+    Op->>A: POST /operator/sessions/3/capacity (token, capacity 3, reason)
+    Note over A: missing or wrong token: 403, database untouched
+    A->>DB: BEGIN
+    A->>DB: SELECT ... FROM sessions WHERE id = 3 FOR UPDATE
+    Note over DB: session row locked: bookings and cancels wait
+    alt unknown session, closed, or capacity unchanged
+        A->>DB: COMMIT (nothing written)
+        A-->>Op: 404, 409, or 200 changed: false
+    else new capacity at or above the number booked
+        A->>DB: UPDATE sessions SET capacity = new
+        A->>DB: INSERT audit_log (no bookings affected)
+        A->>DB: COMMIT
+        A-->>Op: 200, cancelled_booking_ids: []
+    else 5 booked, cut to 3
+        A->>DB: SELECT 2 confirmed bookings ORDER BY created_at DESC, id DESC
+        A->>DB: UPDATE them: cancelled, cancel_reason = capacity_reduced
+        A->>DB: INSERT 2 outbox rows (booking_cancelled_by_pool)
+        A->>DB: UPDATE sessions SET capacity = 3, booked = booked - 2
+        A->>DB: INSERT audit_log (reason, before 5 of 5, after 3 of 3, booking ids)
+        A->>DB: COMMIT
+        A-->>Op: 200, cancelled_booking_ids: [5, 4]
+    end
+```
+
+Capacity and the counter change in one `UPDATE`. PostgreSQL checks `CHECK (booked <= capacity)` after every statement, so lowering capacity in one statement and the counter in the next would fail on the first.
+
+A booking that arrives during a cut waits for the lock. The test suite races 20 bookings against a cut from 40 places (15 booked) to 10, five times per run, and the session never ends above 10. With the lock removed, it failed in 5 out of 5 runs.
+
+```mermaid
+sequenceDiagram
+    participant Op as Operator
+    participant S as Swimmer
+    participant DB as PostgreSQL
+
+    Op->>DB: lock session row, read 15 booked of 40
+    S->>DB: book: lock session row
+    Note over S,DB: waits: the cut holds the lock
+    Op->>DB: cancel the 5 newest, capacity 10, booked 10, audit row, COMMIT
+    Note over DB: lock released
+    DB-->>S: lock granted, read booked = 10 of 10
+    S->>DB: full: store 409, COMMIT
+```
+
+If the booking gets the lock first, it's counted before the cut, and as the newest booking it's the first to be cancelled.
+
+`POST /operator/sessions/{id}/close` follows the same path but cancels every confirmed booking with the reason `session_closed`, then sets `status = 'closed'` and `booked = 0`. From then on, every booking request for that session gets `409 session is closed`, and closing it again returns `changed: false`. Both actions describe an end state, so a repeat changes nothing and neither needs an idempotency key.
+
+## 10. Booking states
+
+There is no "pending" state: a request either reserves a place and becomes `confirmed` in one transaction, or it's rejected. That removes the gap between "shown as booked" and "actually reserved". Every cancelled booking records why: `swimmer`, `capacity_reduced` or `session_closed`.
 
 ```mermaid
 stateDiagram-v2
     [*] --> confirmed: book (place reserved in the same transaction)
-    [*] --> rejected: full, already booked, unknown session
-    confirmed --> cancelled: cancel (place released once)
+    [*] --> rejected: full, closed, already booked, unknown session
+    confirmed --> cancelled: swimmer cancels, or the pool cuts capacity or closes the session
     cancelled --> cancelled: cancel again (no change)
     rejected --> [*]
     cancelled --> [*]
 ```
 
-## 10. Notification delivery
+## 11. Notification delivery
 
 The outbox row is written with the booking. The worker delivers it later, outside the booking's transaction, so a delivery failure can never change a booking. Delivery is at least once; the inbox's unique `outbox_id` turns a repeat into a no-op.
 
@@ -270,7 +347,7 @@ stateDiagram-v2
 
 The worker claims a row with `FOR NO KEY UPDATE SKIP LOCKED`. `SKIP LOCKED` lets several workers share the queue. `NO KEY UPDATE` (not `UPDATE`) lets the adapter's inbox insert pass its foreign-key check while the worker still holds the row; with `FOR UPDATE` the two connections waited on each other forever.
 
-## 11. Drill A: instance failure
+## 12. Drill A: instance failure
 
 Local experiment, not proof of AWS high availability. `drills/a/run.py` runs 30 fictional swimmers for 60 seconds, kills `a1` with `kill -9` at 20 seconds and restarts it at 40. HAProxy doesn't retry on its own (`retries 0`); the load script retries with the same idempotency key.
 
@@ -313,46 +390,58 @@ sequenceDiagram
     Note over H: 2 passed checks: a1 marked UP again
 ```
 
-## 12. Drill B: database connectivity (planned)
+## 13. Drill B: database connectivity
 
-Not built yet. The plan from the research: put Toxiproxy between the API and PostgreSQL to add latency, time out or cut the connection, including the case where a booking commits but the client's request times out.
+Local experiment, not proof of how a cloud database would behave. `drills/b/run.py` runs the same 30-swimmer load as drill A for 60 seconds against one API instance, with every database connection from that instance and the outbox worker going through Toxiproxy. The proxy refuses connections from 10 to 20 seconds and delays every reply by 1 second from 30 to 40 seconds. At 50 seconds, a single victim booking goes to a second instance with its own proxy. It's held for 2 seconds before its commit, and half a second in, that proxy starts swallowing replies, so the `COMMIT` reaches PostgreSQL but its answer never comes back. Once the proxy works again, the victim retries with the same key and must get the saved booking.
 
 ```mermaid
 flowchart LR
-    Load["drill B load script"]
-    API["Booking API"]
-    Toxi["Toxiproxy<br/>latency, timeout, cut"]
-    PG[("PostgreSQL")]
+    Load["drills/a/load.py<br/>30 swimmers, same-key retries"]
+    Victim["victim booking<br/>retries with the same key"]
 
-    Load -.-> API
-    API -.-> Toxi
-    Toxi -.-> PG
+    subgraph Local["Local machine"]
+        API["API :8001"]
+        VAPI["victim API :8003<br/>holds its booking 2 s before commit"]
+        Worker["Outbox worker"]
+        T1["Toxiproxy pg :15432<br/>10 to 20 s: refuse connections<br/>30 to 40 s: 1 s latency"]
+        T2["Toxiproxy pg_victim :15433<br/>at 50 s: swallow replies"]
+        PG[("PostgreSQL :5432<br/>swimsync_drill")]
+    end
 
-    class Load,Toxi planned
-    classDef planned stroke-dasharray: 5 5
+    Load --> API
+    Victim --> VAPI
+    API --> T1
+    Worker --> T1
+    VAPI --> T2
+    T1 --> PG
+    T2 --> PG
 ```
 
-## 13. Trust boundaries
+Results are in the [README](../README.md#fault-drills-and-results) and [drills/results/](../drills/results/). The first run found that the outbox worker crashed when the database went away; it now waits with its own backoff and carries on.
 
-What SwimSync trusts today, and what it doesn't. The swimmer's identity is only a header: fine for a local demo, not authentication.
+## 14. Trust boundaries
+
+What SwimSync trusts today, and what it doesn't. The swimmer's identity is only a header and the operator's is a shared token: fine for a local demo, not authentication.
 
 ```mermaid
 flowchart LR
     subgraph Untrusted["Untrusted: anything can be sent"]
-        Client["Client"]
+        Client["Swimmer's client"]
+        OpClient["Operator's client"]
     end
 
     subgraph Server["Checked on the server"]
-        API["API<br/>validates headers and IDs,<br/>decides every outcome"]
+        API["API<br/>validates headers and IDs,<br/>checks the operator token,<br/>decides every outcome"]
     end
 
     subgraph Data["Localhost only"]
         PG[("PostgreSQL<br/>constraints as a backstop")]
     end
 
-    Auth["Real sign-in and operator roles<br/>(planned)"]
+    Auth["Real sign-in for swimmers<br/>and named operators (planned)"]
 
     Client -- "X-Swimmer-Id (demo identity),<br/>Idempotency-Key (UUID)" --> API
+    OpClient -- "X-Operator-Token<br/>(one shared secret)" --> API
     API --> PG
     Auth -.-> API
 
@@ -360,9 +449,9 @@ flowchart LR
     classDef planned stroke-dasharray: 5 5
 ```
 
-What the server never takes from the client: whether there's room, the booking's status, or the counter. The database enforces the last line of defence itself: `CHECK (booked <= capacity)`, the unique confirmed-booking index and the unique inbox `outbox_id`.
+What the server never takes from the client: whether there's room, the booking's status, the counter, or which bookings a cut cancels. The operator token is compared in constant time, and if `SWIMSYNC_OPERATOR_TOKEN` isn't set, every operator request gets 403. The database enforces the last line of defence itself: `CHECK (booked <= capacity)`, the unique confirmed-booking index, the unique inbox `outbox_id` and the `CHECK` that every cancelled booking has a reason.
 
-## 14. AWS infrastructure (designed, never deployed)
+## 15. AWS infrastructure (designed, never deployed)
 
 The AWS version of the local system, as written in `infra/terraform/` and checked with `terraform validate`. It has never been planned or applied: the account is on the Paid plan, so the ₹0 budget comes from not deploying it. Everything in this section is drawn dashed for that reason.
 
@@ -417,7 +506,7 @@ flowchart TB
 
 What survives what: losing an app instance or a whole zone leaves the other app instance serving through the ALB, which is drill A at cloud scale. Losing the database's zone takes the database down unless `db_multi_az` is switched on, which roughly doubles the database's cost. That trade-off is deliberate and is listed as a known single point of failure.
 
-## 15. AWS security groups
+## 16. AWS security groups
 
 Each tier accepts traffic only from the tier in front of it, and the rules name security groups, not IP addresses, so they keep working when instances are replaced. Terraform removes AWS's default "allow all outbound" rule, so the arrows below are the only traffic allowed. There's no port 22 anywhere.
 
@@ -442,7 +531,7 @@ flowchart LR
 
 HTTP only on the ALB: HTTPS needs a certificate, a certificate needs a domain, and a domain costs money. It's a production requirement, not part of the ₹0 design.
 
-## 16. Admin access and the database password
+## 17. Admin access and the database password
 
 Nothing connects in to an app instance. SSM Agent on each instance connects out, through the interface endpoints, to Session Manager, and an operator's shell travels back over that connection. The database password is created by RDS and kept in Secrets Manager; Terraform only ever sees its ARN, and the instance role may read that one secret and nothing else.
 
