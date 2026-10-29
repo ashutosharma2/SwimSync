@@ -139,6 +139,29 @@ It isn't production-ready. The `X-Swimmer-Id` header, and the "You are" picker i
 
 ## Local setup
 
+The quickest way to try SwimSync is with Docker, which needs nothing else installed. The native setup further down is what the tests and the fault drills use.
+
+### With Docker
+
+You need Docker Desktop, or another Docker engine with Compose.
+
+```bash
+cd ~/projects/swimsync
+docker compose up --build
+```
+
+Then open http://127.0.0.1:8088. The API is also reachable at http://127.0.0.1:8002.
+
+- Every start reseeds the database, so the six sessions are always for tomorrow and earlier bookings are gone.
+- The seed creates session times in the `Asia/Kolkata` time zone, because containers run in UTC. Set `SWIMSYNC_TZ` to use a different one.
+- To try the operator endpoints, start it with a token, `SWIMSYNC_OPERATOR_TOKEN=pick-a-long-random-value docker compose up --build`, and send the same value in `X-Operator-Token` to http://127.0.0.1:8002. Without a token, every operator request gets 403.
+- It can run at the same time as the native setup and the drills, which use ports 8001, 5173 and 8080.
+- Stop it with Ctrl+C, or with `docker compose down` if you started it in the background with `-d`.
+
+[ADR-014](docs/adr/014-docker-compose-beside-native.md) explains why it's set up this way.
+
+### Native
+
 Tested on macOS with Homebrew, PostgreSQL 18, Python 3.14 and Node 26. A new terminal opens in your home folder, where `.venv/bin/uvicorn` doesn't exist, so every block below starts with `cd ~/projects/swimsync`. Change the path if you cloned the repo somewhere else.
 
 ```bash
@@ -204,7 +227,7 @@ To simulate a notification outage, start the worker with `SWIMSYNC_ADAPTER_FAILI
 npm --prefix frontend test
 ```
 
-The backend tests use the `swimsync_test` database (override with `TEST_DATABASE_URL`). Result on 2026-10-29: 45 backend tests and 16 frontend tests passed, locally and in GitHub Actions. The [workflow](.github/workflows/tests.yml) runs both suites against PostgreSQL 18, builds the frontend and runs `terraform validate` on every push to main.
+The backend tests use the `swimsync_test` database (override with `TEST_DATABASE_URL`). Result on 2026-10-29: 45 backend tests and 16 frontend tests passed, locally and in GitHub Actions. The [workflow](.github/workflows/tests.yml) runs both suites against PostgreSQL 18, builds the frontend and both Docker images, and runs `terraform validate` on every push to main.
 
 | File | What it proves |
 |---|---|
@@ -248,6 +271,7 @@ The whole project has to cost ₹0. Credits and free trials don't count, because
 | React, Vite, Tailwind, Vitest, qrcode | ₹0 | Open-source (MIT) |
 | HAProxy, Toxiproxy (for the drills) | ₹0 | Open-source; Toxiproxy is MIT-licensed |
 | Terraform CLI | ₹0 | BSL; HashiCorp's licence FAQ says personal use is unaffected (checked 2026-10-21). OpenTofu is the fallback |
+| Docker Desktop and the container images (optional) | ₹0 | Docker Desktop is free for personal use, education and small businesses ([licence](https://docs.docker.com/subscription/desktop-license/), checked 2026-10-21). The base images are official Docker Hub images, pulled without an account |
 | GitHub Free, private repo | ₹0 | Actions minutes are blocked, not billed, without a payment method (GitHub docs, checked 2026-10-21) |
 | AWS | Not used | My account is on the Paid plan, which bills automatically once credits run out. The Terraform is validated locally and never applied |
 
@@ -284,6 +308,14 @@ dropdb swimsync_test
 dropdb swimsync_drill
 /opt/homebrew/opt/postgresql@18/bin/pg_ctl -D /opt/homebrew/var/postgresql@18 stop
 rm -rf .venv frontend/node_modules infra/terraform/.terraform
+```
+
+If you used Docker:
+
+```bash
+cd ~/projects/swimsync
+docker compose down
+docker image rm swimsync-backend swimsync-web
 ```
 
 Stop the API, the frontend and the worker with Ctrl+C.
