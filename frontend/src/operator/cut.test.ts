@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { HeldPlace } from "../api";
-import { cutPreview, writeOutcome } from "./cut";
+import { afterUnknown, cutPreview, resultLine, writeOutcome, type Change } from "./cut";
 
 const places = (...swimmers: string[]): HeldPlace[] =>
   swimmers.map((swimmer_id, i) => ({ booking_id: i + 1, swimmer_id, booked_at: "" }));
@@ -51,5 +51,43 @@ describe("write outcome", () => {
     expect(writeOutcome({ status: 409, body: { error: "session is closed" } }).kind).toBe("closed");
     expect(writeOutcome({ status: 404, body: { error: "session not found" } }).kind).toBe("missing");
     expect(writeOutcome({ status: 422, body: {} }).kind).toBe("invalid");
+  });
+});
+
+describe("result line", () => {
+  const cut: Change = { kind: "capacity", name: "Aqua fit", target: 3 };
+  const close: Change = { kind: "close", name: "Aqua fit" };
+
+  it("is done only for a change the server said it made", () => {
+    expect(resultLine(cut, { kind: "done", cancelled: [5, 4] })).toEqual({
+      text: "Done. Aqua fit now has 3 places. 2 bookings cancelled; the notices are in the outbox.",
+      bad: false,
+      done: true,
+    });
+    expect(resultLine(close, { kind: "done", cancelled: [] }).text).toBe("Closed Aqua fit. Nobody lost their place.");
+    expect(resultLine(cut, { kind: "unchanged" }).done).toBe(false);
+    expect(resultLine(cut, { kind: "unknown" })).toMatchObject({ bad: true, done: false });
+  });
+});
+
+describe("after a lost reply", () => {
+  const cut: Change = { kind: "capacity", name: "Aqua fit", target: 3 };
+  const close: Change = { kind: "close", name: "Aqua fit" };
+  const reread = (capacity: number, status: "open" | "closed") => ({ status: 200, body: { capacity, status, bookings: [] } });
+
+  it("says done only when the session read back shows the change", () => {
+    expect(afterUnknown(cut, reread(3, "open")).done).toBe(true);
+    expect(afterUnknown(close, reread(8, "closed")).done).toBe(true);
+  });
+
+  it("says not confirmed, never failed, when the session doesn't show it yet", () => {
+    const line = afterUnknown(cut, reread(8, "open"));
+    expect(line).toMatchObject({ bad: true, done: false });
+    expect(line.text).toContain("still shows 8 places");
+    expect(line.text).toContain("repeating the same change is safe");
+  });
+
+  it("says it couldn't confirm when the session can't be read either", () => {
+    expect(afterUnknown(cut, { status: null, error: "TimeoutError" }).text).toMatch(/^Couldn't confirm/);
   });
 });

@@ -3,7 +3,7 @@
 
 import type { Answer, HeldPlace } from "../api";
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
  * What changing a session to `target` places would do. `places` is oldest booking first, as the API
@@ -45,4 +45,57 @@ export function writeOutcome(answer: Answer): WriteOutcome {
   if (status === 422) return { kind: "invalid" };
   if (status === 503 && body?.error === "database_unavailable") return { kind: "not_changed" };
   return { kind: "unknown" }; // outcome_unknown, a proxy error, anything else
+}
+
+/** The change the operator asked for, for the line that describes what happened. */
+export type Change = { kind: "capacity"; name: string; target: number } | { kind: "close"; name: string };
+
+export type ResultLine = { text: string; bad: boolean; done: boolean };
+
+const cancelledLine = (n: number) =>
+  n ? `${plural(n, "booking", "bookings")} cancelled; the notices are in the outbox.` : "Nobody lost their place.";
+
+/** What to tell the operator after an answer. "unknown" gets a holding line until the session is read back. */
+export function resultLine(change: Change, outcome: WriteOutcome): ResultLine {
+  const bad = (text: string): ResultLine => ({ text, bad: true, done: false });
+  switch (outcome.kind) {
+    case "done":
+      return {
+        text: change.kind === "capacity" ? `Done. ${change.name} now has ${change.target} places. ${cancelledLine(outcome.cancelled.length)}` : `Closed ${change.name}. ${cancelledLine(outcome.cancelled.length)}`,
+        bad: false,
+        done: true,
+      };
+    case "unchanged":
+      return { text: change.kind === "capacity" ? "Nothing to change." : `${change.name} was already closed.`, bad: false, done: false };
+    case "not_changed":
+      return bad("Not changed. The database is unavailable, and nothing was saved. Try again in a moment.");
+    case "closed":
+      return bad(`${change.name} is closed, so it can't be changed.`);
+    case "missing":
+      return bad("That session no longer exists.");
+    case "invalid":
+      return bad("The server didn't accept that change. Capacity must be 1 to 500 and the reason up to 200 characters.");
+    case "refused":
+      return bad("The operator token wasn't accepted.");
+    case "unknown":
+      return bad("No reply. Checking the session…");
+  }
+}
+
+/**
+ * After a lost reply, the session read back decides what to say: done only if it now shows the change.
+ * If it doesn't, the change may still be in flight, so it's "not confirmed", never "failed". Repeating
+ * is safe because a change names an end state ("capacity is 3"), not a step.
+ */
+export function afterUnknown(change: Change, reread: Answer): ResultLine {
+  if (reread.status !== 200) {
+    return { text: `Couldn't confirm. No reply, and ${change.name} couldn't be read back. Check the change log before trying again; repeating the same change is safe.`, bad: true, done: false };
+  }
+  const s = reread.body;
+  const matches = change.kind === "capacity" ? s.capacity === change.target && s.status === "open" : s.status === "closed";
+  if (matches) {
+    return { text: change.kind === "capacity" ? `Done. The reply was lost, but ${change.name} now has ${change.target} places.` : `Done. The reply was lost, but ${change.name} now shows as closed.`, bad: false, done: true };
+  }
+  const now = s.status === "closed" ? "shows as closed" : `still shows ${s.capacity} places`;
+  return { text: `Not confirmed. No reply, and ${change.name} ${now}. Check again in a moment; repeating the same change is safe.`, bad: true, done: false };
 }
