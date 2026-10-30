@@ -5,7 +5,7 @@
 - **Scenario:** SwimSync books places in fictional swimming sessions so that a confirmed booking always means a reserved place, motivated by being turned away from a booked swim.
 - **Obstacle:** the guarantees live in a few lines of SQL inside transactions, plus a worker that runs separately. Without pictures it's hard to see where the lock is held, what's in each transaction and which process does what.
 - **Action:** one diagram per view, drawn from the code as it is today. Solid lines and boxes are built; dashed ones are planned.
-- **Result:** you can follow a booking from the request to the committed row, see two swimmers race for the last place, see which bookings a capacity cut cancels, and see how a notification reaches the inbox even when delivery fails.
+- **Result:** you can follow a booking from the request to the committed row, see two swimmers race for the last place, see which bookings a capacity cut cancels, see how a notification reaches the inbox even when delivery fails, and see the same app running in containers and on a local Kubernetes cluster.
 - **Troubleshooting:** the diagrams are only useful while they're accurate, so they're updated at the end of every phase, alongside the README.
 
 **Contents**
@@ -27,12 +27,15 @@
 15. [AWS infrastructure (designed, never deployed)](#15-aws-infrastructure-designed-never-deployed)
 16. [AWS security groups](#16-aws-security-groups)
 17. [Admin access and the database password](#17-admin-access-and-the-database-password)
+18. [Running with Docker Compose](#18-running-with-docker-compose)
+19. [A local Kubernetes cluster (kind)](#19-a-local-kubernetes-cluster-kind)
+20. [Drill C: rolling update and pod kill (planned)](#20-drill-c-rolling-update-and-pod-kill-planned)
 
 ---
 
 ## 1. System context
 
-Who and what SwimSync deals with. The pool's front desk sits outside SwimSync: walk-ins and members admitted at the desk don't go through it, which is a known limitation, not something the MVP handles. Operators change capacity through the API with a shared token; their own screen and sign-in are planned.
+Who and what SwimSync deals with. The pool's front desk sits outside SwimSync: walk-ins and members admitted at the desk don't go through it, which is a known limitation, not something the MVP handles. Operators change capacity, and read who's booked and the change log, through the API with a shared token. Their own screen is partly built and paused, and sign-in is planned.
 
 ```mermaid
 flowchart LR
@@ -48,7 +51,7 @@ flowchart LR
 
     Swimmer -- "browse, book, cancel,<br/>my bookings, inbox" --> API
     Worker -- "notices in the in-app inbox" --> Swimmer
-    Operator -- "cut capacity, close a session<br/>(X-Operator-Token)" --> API
+    Operator -- "cut capacity, close a session,<br/>read bookings and the change log<br/>(X-Operator-Token)" --> API
     Operator -. "planned" .-> OpUI
     Desk -. "not connected:<br/>known limitation" .- Operator
 
@@ -66,7 +69,7 @@ flowchart LR
     Client["curl, tests,<br/>drill load scripts"]
 
     subgraph Local["Local machine"]
-        UI["React + Tailwind app<br/>Vite dev server :5173"]
+        UI["React app, pool design<br/>Vite dev server :5173"]
         API["Booking API<br/>FastAPI + uvicorn :8001"]
         Worker["Outbox worker<br/>scripts/outbox_worker.py"]
         Adapter["Simulated in-app adapter<br/>can be switched to fail"]
@@ -90,7 +93,7 @@ How the backend code is split. `booking.py` and `operator.py` hold the rules and
 flowchart TB
     Main["main.py<br/>routes, header and token checks,<br/>run_change: explicit commit,<br/>/health, X-Instance"]
     Booking["booking.py<br/>book, cancel, my_bookings,<br/>my_notifications"]
-    Operator["operator.py<br/>set_capacity, close_session,<br/>audit"]
+    Operator["operator.py<br/>set_capacity, close_session,<br/>change_log, session_bookings"]
     DB["db.py<br/>connect(): 2 s connect,<br/>500 ms statement and lock timeouts"]
     Outbox["outbox.py<br/>deliver_one, backoff,<br/>run_forever"]
     Adapters["adapters.py<br/>InAppAdapter"]
@@ -556,3 +559,83 @@ sequenceDiagram
 ```
 
 Instances also require IMDSv2 (`http_tokens = "required"`), so the instance metadata, including the role's temporary credentials, can only be read after a PUT for a session token.
+
+## 18. Running with Docker Compose
+
+`docker compose up --build` runs the same app in containers. One backend image runs the API, the worker and the seed with different commands. Each start reseeds, and only the web app and the API are published, on 127.0.0.1. The database has no published port and trusts the compose network, so it has no password ([ADR-014](adr/014-docker-compose-beside-native.md)).
+
+```mermaid
+flowchart LR
+    Browser["Browser"]
+
+    subgraph Compose["docker compose, one machine"]
+        Web["web: nginx<br/>the built app on 127.0.0.1:8088,<br/>/api/ forwarded to the API"]
+        API["api: uvicorn<br/>127.0.0.1:8002"]
+        Worker["worker: outbox worker"]
+        Seed["seed: runs once per start,<br/>then exits"]
+        DB[("db: PostgreSQL 18.6<br/>no published port")]
+    end
+
+    Browser --> Web
+    Web --> API
+    API -- "one transaction per change" --> DB
+    Worker -- "claims due outbox rows" --> DB
+    Seed -- "sessions for tomorrow,<br/>in SWIMSYNC_TZ" --> DB
+```
+
+Start-up order: the database becomes healthy, the seed finishes, the API and the worker start, and the web container starts once the API answers `/health`.
+
+## 19. A local Kubernetes cluster (kind)
+
+`scripts/k8s-up.sh` runs the same two images on a one-node kind cluster. The images are built here and copied into the cluster, never pushed to a registry. The API runs as two pods behind a Service, and each pod names itself in `X-Instance` ([ADR-015](adr/015-local-kubernetes-with-kind.md)).
+
+```mermaid
+flowchart LR
+    Browser["Browser"]
+    Build["docker compose build,<br/>then docker save per platform<br/>and kind load image-archive"]
+
+    subgraph Kind["kind cluster 'swimsync', one node"]
+        WebSvc["web Service<br/>NodePort 30080,<br/>published on 127.0.0.1:8089"]
+        WebPod["web pod: nginx"]
+        ApiSvc["api Service"]
+        Api1["api pod"]
+        Api2["api pod"]
+        Worker["worker pod"]
+        SeedJob["seed Job"]
+        DbSvc["db Service<br/>inside the cluster only"]
+        DbPod[("db pod: PostgreSQL 18.6,<br/>data in the pod")]
+    end
+
+    Build --> Kind
+    Browser --> WebSvc --> WebPod --> ApiSvc
+    ApiSvc --> Api1
+    ApiSvc --> Api2
+    Api1 --> DbSvc
+    Api2 --> DbSvc
+    Worker --> DbSvc
+    SeedJob --> DbSvc
+    DbSvc --> DbPod
+```
+
+The API pods have readiness and liveness probes on `/health`, which deliberately doesn't check the database, so a database outage doesn't take every pod out of the Service at once. Each API and web pod pauses 5 s before it stops, so a rolling restart doesn't refuse requests. The operator token is a Secret created from the shell's `SWIMSYNC_OPERATOR_TOKEN` and never written to a file. CI builds a throwaway cluster on every push and books through it.
+
+## 20. Drill C: rolling update and pod kill (planned)
+
+The harness in `drills/c/` is built, and its runs are waiting for the written prediction, so the fault and the check are drawn dashed. Drill A's load books through the web frontend while, at 20 s, the API deployment does a rolling restart or one API pod is force-deleted ([write-up](../drills/03-rolling-update.md)).
+
+```mermaid
+flowchart LR
+    Load["drill A's load<br/>30 swimmers, 60 s"]
+    Web["web Service<br/>127.0.0.1:8089"]
+    Api["API deployment<br/>two pods"]
+    DB[("db pod")]
+    Fault["at 20 s: a rolling restart,<br/>or one pod force-deleted"]
+    Check["analyse.py: drill A's hard limits,<br/>through a port-forward to the database"]
+
+    Load --> Web --> Api --> DB
+    Fault -.-> Api
+    Check -.-> DB
+
+    class Fault,Check planned
+    classDef planned stroke-dasharray: 5 5
+```

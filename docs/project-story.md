@@ -2,7 +2,7 @@
 
 SOART is Scenario, Obstacles, Actions, Results and Troubleshooting. This file tells how SwimSync was built, from one turned-away booking to a system tested against races, crashes and a failing database. Each decision has its own record in [adr/](adr/).
 
-**Status (2026-10-30):** the booking core, the fault drills A and B, and the AWS design are done. The interface phase is finishing with the operator screen, drill C (Kubernetes) is built and waits for my prediction, and the portfolio write-ups are in progress.
+**Status (2026-10-30):** the booking core, the fault drills A and B, and the AWS design are done. The swimmer screen is built, but the operator screen is paused, so the interface phase stays open. Drill C (Kubernetes) is built and waits for my prediction, and the portfolio write-ups are in progress.
 
 ---
 
@@ -63,7 +63,7 @@ A cut cancels the newest bookings that no longer fit, tells each swimmer why and
 
 ### The design: a demo, then the React app (2026-10-29 to 2026-10-30)
 
-A one-file browser demo ran the booking rules with made-up data and settled the pool design, which then moved into the React app ([ADR-012](adr/012-pool-canvas-beside-react.md), [ADR-013](adr/013-port-the-demo-css.md)). The operator screen, still being built, reads who is booked and the change log through two token-protected endpoints ([ADR-016](adr/016-operator-reads-who-is-booked.md)).
+A one-file browser demo ran the booking rules with made-up data and settled the pool design, which then moved into the React app ([ADR-012](adr/012-pool-canvas-beside-react.md), [ADR-013](adr/013-port-the-demo-css.md)). The two endpoints an operator screen needs, who is booked and the change log, are built behind the operator token ([ADR-016](adr/016-operator-reads-who-is-booked.md)). The screen itself is partly built and paused.
 
 ### Containers and Kubernetes, locally (2026-10-29 to 2026-10-30)
 

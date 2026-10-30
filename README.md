@@ -13,11 +13,11 @@ To try it without installing anything, open [prototype/index.html](prototype/ind
 | Phase | | |
 |---|---|---|
 | 1. Problem framing | ✅ | Desk research, the causes SwimSync designs against, MVP scope |
-| 2. Local core | ✅ | Booking, cancel, idempotency keys, outbox and notifications, honest answers when the database fails, operator capacity changes with an audit log; 45 tests |
-| 3. Fault drills | ✅ | Drill A (app instance killed mid-request) and drill B (database down, slow, and a lost commit reply), both passing |
-| 4. MVP interface | ⏳ | First version built and tested (16 tests); on hold while the visual design is redone in Figma |
-| 5. Infrastructure design | ✅ | Terraform for a two-zone AWS VPC, ALB, two instances and RDS; validated locally, never applied |
-| 6. Portfolio | ⏳ | Architecture diagrams and build log done; demo, project story and drill write-ups to finish |
+| 2. Local core | ✅ | Booking, cancel, idempotency keys, outbox and notifications, honest answers when the database fails, operator capacity changes with an audit log, and operator reads of who's booked and the change log; 52 tests |
+| 3. Fault drills | ✅ | Drill A (app instance killed mid-request) and drill B (database down, slow, and a lost commit reply), both passing. Drill C (a rolling update and a forced pod kill on Kubernetes) is built and waits for its first run |
+| 4. MVP interface | ⏳ | The swimmer screen in the pool design, checked in a browser against the real API (29 frontend tests). The operator screen is paused; its API calls and cut preview are built |
+| 5. Infrastructure design | ✅ | Terraform for a two-zone AWS VPC, ALB, two instances and RDS; validated locally, never applied. The app also runs with Docker Compose and on a local kind cluster |
+| 6. Portfolio | ⏳ | Architecture diagrams, build log, ADRs 001 to 016 and a browser demo done. Drill write-ups and the project story are drafted and need editing |
 
 The architecture decision records are in [docs/adr/](docs/adr/): one per non-obvious decision, each with the evidence behind it.
 
@@ -58,15 +58,17 @@ I decided not to run interviews or surveys, so SwimSync rests on one personal in
 
 Built:
 
-- List sessions with the places left, shown as a water-level meter with an "as of" time
+- List sessions with the places left, shown as a rope of floats (one per place, the last places in red) with an "as of" time
 - Book a place: atomic reservation, safe retries, honest answers when the outcome isn't known
 - Cancel: releases the place exactly once
 - "My bookings", with each confirmed booking shown as a swim pass with a QR code
 - In-app notifications fed by an outbox, with a worker that retries and survives database outages
 - Operator capacity changes: a cut cancels the newest bookings that no longer fit, closing a session cancels all of its bookings, each cancelled swimmer gets a notice with the reason, and every change is written to an audit log
+- Operator reads: who holds a place in a session, oldest first, and the change log, newest first, both behind the operator token
+- Running it with Docker Compose, or on a one-node kind cluster with two API replicas
 - A seed script that creates fictional sessions
 
-Deferred: a waitlist, an operator UI with real authentication, and booking history. I left the waitlist out because it doesn't help with the incident.
+Deferred: a waitlist, an operator screen with real authentication (its API calls and cut preview are built, and the screen itself is paused), and booking history. I left the waitlist out because it doesn't help with the incident.
 
 Out: payments, real SMS or email, multiple facilities, mobile apps.
 
@@ -75,7 +77,7 @@ Out: payments, real SMS or email, multiple facilities, mobile apps.
 All the diagrams, from the request path to the AWS design, are in [docs/architecture.md](docs/architecture.md). The local system:
 
 ```
-   browser (React + Tailwind, frontend/)  operator (curl for now)
+   browser (React, frontend/)             operator (curl for now)
      │  /api/* through the Vite dev proxy     │  X-Operator-Token
      │  X-Swimmer-Id, Idempotency-Key         │
      └───────────────────┬────────────────────┘
@@ -97,9 +99,11 @@ PostgreSQL: sessions · bookings · idempotency_keys · outbox · notifications 
 
 **Capacity change path:** `POST /operator/sessions/{id}/capacity` takes the same session-row lock as booking, so a booking can't slip in halfway through a cut. If the new capacity is below the number booked, the excess bookings are picked newest first (`ORDER BY created_at DESC, id DESC`), so the people who booked earliest keep their places. Each one is cancelled with the reason `capacity_reduced` and gets an outbox notice. The new capacity and the new counter are written in one `UPDATE`, so the `CHECK` constraint holds at every moment, and an `audit_log` row records why, the before and after values and the cancelled booking ids. `POST /operator/sessions/{id}/close` does the same for every booking with the reason `session_closed`, and the session then answers new bookings with `409 session is closed`. Both actions describe an end state ("capacity is 3", "closed"), so repeating one changes nothing and neither needs an idempotency key. Raising capacity cancels nobody and brings nobody back.
 
+**Operator reads:** `GET /operator/sessions/{id}/bookings` lists a session's confirmed bookings oldest first, which is the reverse of the order a cut cancels in, so the last booking listed is the first to go. It reads the count and the list in one statement, so both come from the same snapshot. `GET /operator/audit` returns the change log, newest first. Both are read-only but sit behind the operator token, because they show swimmer ids ([ADR-016](docs/adr/016-operator-reads-who-is-booked.md)).
+
 **The frontend's rule:** a booking is shown as confirmed only after the server says so. On an uncertain answer, the app retries with the same key after 1, 2 and 4 seconds, then checks "My bookings", and keeps the key so a later "Check again" can't book twice. A full or closed session is a final answer. That logic is in [frontend/src/bookingFlow.ts](frontend/src/bookingFlow.ts), separate from the screens. "My bookings" shows why each cancelled booking was cancelled.
 
-For the drills, two app instances run behind HAProxy (drill A), and Toxiproxy sits between the app and PostgreSQL (drill B). Nothing runs on AWS.
+For the drills, two app instances run behind HAProxy (drill A), and Toxiproxy sits between the app and PostgreSQL (drill B). The same app also runs in containers with Docker Compose, and on a one-node kind cluster with two API replicas, where drill C runs ([ADR-014](docs/adr/014-docker-compose-beside-native.md), [ADR-015](docs/adr/015-local-kubernetes-with-kind.md)). Nothing runs on AWS.
 
 ## Data model and consistency guarantees
 
@@ -131,7 +135,7 @@ MVP controls:
 - PostgreSQL listens on localhost only.
 - Inputs are validated server side: the swimmer id matches `^[A-Za-z0-9_-]{1,64}$` and the idempotency key must be a UUID.
 - Only the owner can cancel a booking.
-- Operator endpoints need an `X-Operator-Token` header matching `SWIMSYNC_OPERATOR_TOKEN`, compared in constant time (`hmac.compare_digest`). If the variable isn't set, every operator request gets 403.
+- Operator endpoints, including the two reads, need an `X-Operator-Token` header matching `SWIMSYNC_OPERATOR_TOKEN`, compared in constant time (`hmac.compare_digest`). If the variable isn't set, every operator request gets 403.
 - Database calls time out (500 ms per statement and lock wait, 2 s to connect), so a slow database can't tie up every worker thread.
 - Synthetic data only; `.env`, keys and Terraform state are ignored by Git.
 
@@ -245,7 +249,7 @@ To simulate a notification outage, start the worker with `SWIMSYNC_ADAPTER_FAILI
 npm --prefix frontend test
 ```
 
-The backend tests use the `swimsync_test` database (override with `TEST_DATABASE_URL`). Result on 2026-10-29: 45 backend tests and 16 frontend tests passed, locally and in GitHub Actions. The [workflow](.github/workflows/tests.yml) runs both suites against PostgreSQL 18, builds the frontend and both Docker images, deploys them to a throwaway kind cluster and books through it, and runs `terraform validate` on every push to main.
+The backend tests use the `swimsync_test` database (override with `TEST_DATABASE_URL`). Result on 2026-10-30: 52 backend tests and 29 frontend tests passed, locally and in GitHub Actions. The [workflow](.github/workflows/tests.yml) runs both suites against PostgreSQL 18, builds the frontend and both Docker images, deploys them to a throwaway kind cluster and books through it, and runs `terraform validate` on every push to main.
 
 | File | What it proves |
 |---|---|
@@ -253,8 +257,10 @@ The backend tests use the `swimsync_test` database (override with `TEST_DATABASE
 | [tests/test_outbox.py](tests/test_outbox.py) | A rolled-back booking leaves no notification. The worker delivers, backs off and gives up after 5 attempts, then resumes when the adapter recovers. A crash after delivery doesn't duplicate an inbox entry, 4 workers deliver each notification once, and the worker survives a database outage. |
 | [tests/test_db_failures.py](tests/test_db_failures.py) | Database down gives a fast 503 with `booked: false` and books nothing. A held lock times out in under 1.5 s. A commit that saved but lost its reply gives `outcome_unknown`, and the retry returns the stored booking; a commit that didn't save gives `outcome_unknown`, and the retry books fresh. |
 | [tests/test_api.py](tests/test_api.py) | HTTP behaviour: 201 then 200 on a retry, required headers, the status list, and a cancel that's safe to retry. |
-| [tests/test_operator.py](tests/test_operator.py) | A capacity cut cancels the newest bookings, tells each swimmer why and audits who was affected. A cut above the number booked cancels nobody, the same capacity twice writes nothing, and raising capacity brings nobody back. Twenty bookings racing a cut never exceed the new capacity. Closing cancels everyone and refuses new bookings, and closing twice changes nothing. A swimmer cancelling a booking the pool already cancelled changes nothing. Operator endpoints refuse a missing or wrong token. |
+| [tests/test_operator.py](tests/test_operator.py) | A capacity cut cancels the newest bookings, tells each swimmer why and audits who was affected. A cut above the number booked cancels nobody, the same capacity twice writes nothing, and raising capacity brings nobody back. Twenty bookings racing a cut never exceed the new capacity. Closing cancels everyone and refuses new bookings, and closing twice changes nothing. A swimmer cancelling a booking the pool already cancelled changes nothing. Operator endpoints refuse a missing or wrong token. The operator can read who holds a place, oldest first, and the change log, newest first, and both reads refuse a missing token. |
 | [frontend/src/bookingFlow.test.ts](frontend/src/bookingFlow.test.ts) | The Book and Cancel buttons never show "booked" before the server confirms, retry with the same key, resume the same key after a page reload, treat "unavailable" after an uncertain answer as still uncertain, treat a closed session as final, and let "My bookings" decide when retries run out. |
+| [frontend/src/rope.test.ts](frontend/src/rope.test.ts) | The float rope has one float per place, puts yours first, shows a checking float while a booking is in flight, marks about a fifth of the places as the last ones, and copes with counts that don't add up, since the list can be a few seconds old. |
+| [frontend/src/operator/cut.test.ts](frontend/src/operator/cut.test.ts) | The operator's cut preview cancels the newest bookings first, the same order as the server, and cancels nobody when everyone fits. A change counts as done only on a 200 that changed something, and a lost reply or a failed commit is unknown, never a failure. |
 
 With the row lock removed, both booking race tests failed in 3 out of 3 runs: the `CHECK` constraint rejected the oversell. With the lock removed from the capacity change, its race test failed in 5 out of 5 runs. An earlier, weaker version of that test caught the missing lock in only 1 run out of 3; the current one repeats the race five times per run, each time with 15 places already booked and 20 bookings racing a cut to 10.
 
@@ -278,6 +284,8 @@ Along the way: delaying every request by 100 ms inside the lock overloaded the s
 |---|---|
 | First run | The hard limits and the lost-commit case passed: the swimmer got `outcome_unknown`, and the retry returned the saved booking. But the outbox worker crashed when the database went down and never came back, leaving 258 notifications undelivered. None were lost, because they were stored safely. The drill's checks passed while the system was clearly unhealthy, which is why the recorded measurements matter as much as the pass marks |
 | After fixing the worker | Pass. Down phase: 1,084 fast `database_unavailable` answers and service back 0.02 s after the proxy returned. Slow phase: all 120 attempts timed out at 2 s, because `statement_timeout` limits the database's own work, not network delay. All 473 notifications delivered |
+
+**Drill C, rolling update and forced pod kill** ([write-up](drills/03-rolling-update.md)). On the local kind cluster, drill A's load runs through the web frontend while, at 20 s, the API deployment does a rolling restart or one API pod is force-deleted. The hard limits are drill A's. The harness is built and its dry run passed; the real runs wait for my written prediction.
 
 ## Cost constraints and free-tier assumptions
 
@@ -350,19 +358,19 @@ Stop the API, the frontend and the worker with Ctrl+C.
 - A separate desk inventory isn't handled. If walk-ins or members are admitted at the desk against the same pool, SwimSync's numbers can be correct while the pool is still full. Fixing that needs every admission to go through one system.
 - There's no real authentication: `X-Swimmer-Id` is trusted as sent, and operators share one token, so the audit log can't say which person made a change.
 - Notifications are in-app only and simulated. There's no SMS, email or push, so a swimmer whose booking is cut only finds out if they open the app before setting off.
-- Operators have no screen yet. Capacity changes and closures are API calls.
+- Operators have no screen yet. Capacity changes, closures and the two reads are API calls; the screen is partly built and paused.
 - Raising capacity again doesn't bring back cancelled bookings. Those swimmers have to book again, and with no waitlist, anyone can take the place first.
 - The audit log is append-only by convention: the app only ever inserts into it, but nothing in the database stops someone with access from editing a row.
 - PostgreSQL is a single point of failure, and there are no backups. In the AWS design, the database stays single-zone unless `db_multi_az` is turned on.
 - The AWS design has never been deployed, so it's validated as Terraform, not proven against AWS. The app also doesn't yet read its database password from Secrets Manager, as the design expects.
 - The drills ran on one Mac. They show how the code behaves under failure, not how AWS would.
-- The frontend's visual design is being redone, and the app is HTTP only.
+- The app is HTTP only.
 - SwimSync can't show it would have prevented my incident, because that cause is unknown.
 
 ## Future improvements
 
-- Apply the new visual design to the frontend, then add a behind-the-scenes panel showing which instance answered each request, and live notification toasts.
-- Finish the drill write-ups and the project story.
-- An operator screen with real sign-in, so the audit log names the person behind each change.
+- A behind-the-scenes panel showing which instance answered each request, and live notification toasts.
+- Run drill C, and finish editing the drill write-ups and the project story.
+- Finish the operator screen (two columns on desktop, the pool floor, the token kept in sessionStorage), then real sign-in, so the audit log names the person behind each change.
 - A waitlist that offers a freed place under the same locking rules, including places freed when capacity goes back up.
 - Have the app read its database password from Secrets Manager, as the AWS design expects.
