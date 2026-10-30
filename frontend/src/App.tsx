@@ -2,13 +2,12 @@ import { useEffect, useState } from "react";
 
 import { PoolFloor } from "./components/PoolFloor";
 import { PoolHeader } from "./components/PoolHeader";
+import { Toolbar } from "./components/Toolbar";
 import { BookingsHead, MyBookingsPage } from "./pages/MyBookingsPage";
 import { SessionsHead, SessionsPage } from "./pages/SessionsPage";
-import { useSettings, type Theme } from "./settings";
 import { useSwimmerData } from "./useSwimmerData";
 
 const SWIMMERS = Array.from({ length: 12 }, (_, i) => `swimmer-${String(i + 1).padStart(2, "0")}`);
-const THEMES: [Theme, string][] = [["device", "Match device"], ["light", "Light"], ["dark", "Night pool"]];
 
 function storedSwimmer() {
   try {
@@ -25,7 +24,6 @@ export function App() {
   // Bumped after any booking change, so the data is read again straight away.
   const [changes, setChanges] = useState(0);
   const [openPass, setOpenPass] = useState<number | null>(null);
-  const settings = useSettings();
   const { sessions, mine, notices, asOf, stale } = useSwimmerData(swimmer, changes);
 
   useEffect(() => {
@@ -48,7 +46,7 @@ export function App() {
       <PoolFloor />
       <div className="demo">
         <div className="in">
-          <span>Demo: there's no sign-in, so pick any swimmer.</span>
+          <span>Demo: there's no sign-in, so pick any swimmer. <a href="/operator">Operator screen</a></span>
           <label>
             You're{" "}
             <select value={swimmer} onChange={(e) => { setSwimmer(e.target.value); setOpenPass(null); }} aria-label="Swimmer">
@@ -60,18 +58,7 @@ export function App() {
 
       <PoolHeader />
 
-      <div className="toolbar">
-        <div className="in">
-          <div className="seg" role="group" aria-label="Theme">
-            {THEMES.map(([value, label]) => (
-              <button key={value} aria-pressed={settings.theme === value} onClick={() => settings.setTheme(value)}>{label}</button>
-            ))}
-          </div>
-          <button className="tool" aria-pressed={settings.paused} onClick={() => settings.setPaused(!settings.paused)}>
-            {settings.paused ? "Play water" : "Pause water"}
-          </button>
-        </div>
-      </div>
+      <Toolbar />
 
       <main className="app">
         <section className="panel" aria-labelledby="app-title">
