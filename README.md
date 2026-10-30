@@ -6,7 +6,7 @@ A booking system for swimming sessions that never confirms more places than a se
 
 The full story of the project, including every real error I hit, is in [docs/project-story.md](docs/project-story.md). The architecture diagrams are in [docs/architecture.md](docs/architecture.md), and a one-line-per-day build log is in [LOG.md](LOG.md).
 
-To try it without installing anything, open [prototype/index.html](prototype/index.html) in a browser. It is a browser simulation of the booking rules with made-up data, not the real app.
+To try it without installing anything, open [prototype/index.html](prototype/index.html) in a browser. It is a browser simulation of the booking rules with made-up data, not the real app. To run the real app, run `docker compose up --build` and open http://127.0.0.1:8088 (see [Local setup](#local-setup)).
 
 ## Status
 
@@ -23,7 +23,7 @@ The architecture decision records are in [docs/adr/](docs/adr/): one per non-obv
 
 ## Project summary
 
-SwimSync is a FastAPI, PostgreSQL and React app for booking capacity-limited swimming sessions. A database row lock makes the capacity check and the booking one atomic step, idempotency keys make retries safe, and notifications go through an outbox written in the same transaction as the booking. When the database fails, the API says either "not booked" or "outcome unknown", never a guess, and the frontend checks again with the same key until it knows. An operator can cut a session's capacity or close it: the bookings that no longer fit, newest first, are cancelled in the same transaction, each swimmer gets a notice saying why, and the change goes into an audit log. Concurrency tests and two local fault drills show the guarantees hold when 20 to 30 requests arrive at once, when an app instance is killed mid-request, and when the database goes down or slows to a crawl. The AWS design is written in Terraform and validated, but deliberately never deployed, to keep the cost at ₹0.
+SwimSync is a FastAPI, PostgreSQL and React app for booking capacity-limited swimming sessions. A database row lock makes the capacity check and the booking one atomic step, idempotency keys make retries safe, and notifications go through an outbox written in the same transaction as the booking. When the database fails, the API says either "not booked" or "outcome unknown", never a guess, and the frontend checks again with the same key until it knows. Swimmers book from one screen of the React app. Operators use another, at `/operator`, to cut a session's capacity or close it: the bookings that no longer fit, newest first, are cancelled in the same transaction, each swimmer gets a notice saying why, and the change goes into an audit log. Concurrency tests and three local fault drills show the guarantees hold when 20 to 30 requests arrive at once, when an app instance is killed mid-request, when the database goes down or slows to a crawl, and when Kubernetes restarts or force-deletes an API pod. The app runs natively, with Docker Compose, or on a one-node kind cluster. The AWS design is written in Terraform and validated, but deliberately never deployed, to keep the cost at ₹0.
 
 ## Personal motivation
 
