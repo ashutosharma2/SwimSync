@@ -103,6 +103,35 @@ def change_log(conn, limit=50):
     ]
 
 
+def session_bookings(conn, session_id):
+    """Who holds a place in a session, oldest booking first: the reverse of the order a capacity cut
+    cancels in, so the last booking listed is the first to lose its place.
+
+    One statement, so the booked count and the list come from the same snapshot and always agree.
+    """
+    rows = conn.execute(
+        "SELECT s.name, s.capacity, s.booked, s.status, b.id AS booking_id, b.swimmer_id, b.created_at"
+        " FROM sessions s LEFT JOIN bookings b ON b.session_id = s.id AND b.status = 'confirmed'"
+        " WHERE s.id = %s ORDER BY b.created_at, b.id",
+        (session_id,),
+    ).fetchall()
+    if not rows:
+        return 404, {"error": "session not found"}
+    first = rows[0]
+    return 200, {
+        "session_id": session_id,
+        "name": first["name"],
+        "capacity": first["capacity"],
+        "booked": first["booked"],
+        "status": first["status"],
+        "bookings": [
+            {"booking_id": row["booking_id"], "swimmer_id": row["swimmer_id"], "booked_at": row["created_at"].isoformat()}
+            for row in rows
+            if row["booking_id"] is not None  # a session with no bookings still comes back as one row
+        ],
+    }
+
+
 def close_session(conn, session_id, reason, actor):
     session = _lock(conn, session_id)
     if session is None:

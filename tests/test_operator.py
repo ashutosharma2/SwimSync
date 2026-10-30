@@ -241,3 +241,57 @@ def test_change_log_is_empty_before_any_change(monkeypatch):
     monkeypatch.setenv("SWIMSYNC_OPERATOR_TOKEN", TOKEN)
     make_session(capacity=3)
     assert client.get("/operator/audit", headers={"X-Operator-Token": TOKEN}).json() == []
+
+
+# Who holds a place in a session, read back for the operator screen.
+
+def bookings_of(session_id):
+    return client.get(f"/operator/sessions/{session_id}/bookings", headers={"X-Operator-Token": TOKEN})
+
+
+def test_session_bookings_need_the_token(monkeypatch):
+    path = f"/operator/sessions/{make_session(capacity=3)}/bookings"
+
+    monkeypatch.delenv("SWIMSYNC_OPERATOR_TOKEN", raising=False)
+    assert client.get(path, headers={"X-Operator-Token": TOKEN}).status_code == 403  # not configured
+
+    monkeypatch.setenv("SWIMSYNC_OPERATOR_TOKEN", TOKEN)
+    assert client.get(path).status_code == 403  # no token
+    assert client.get(path, headers={"X-Operator-Token": "guess"}).status_code == 403  # wrong token
+    assert client.get(path, headers={"X-Operator-Token": TOKEN}).status_code == 200
+
+
+def test_session_bookings_are_oldest_first_so_a_cut_takes_the_end_of_the_list(monkeypatch):
+    monkeypatch.setenv("SWIMSYNC_OPERATOR_TOKEN", TOKEN)
+    session = make_session(capacity=4, name="Aqua fit")
+    ids = [book(session, s)[1]["booking_id"] for s in ["ana", "ben", "cai", "dev"]]
+
+    listed = bookings_of(session).json()
+    assert (listed["name"], listed["capacity"], listed["booked"], listed["status"]) == ("Aqua fit", 4, 4, "open")
+    assert [b["swimmer_id"] for b in listed["bookings"]] == ["ana", "ben", "cai", "dev"]
+
+    _, cut = set_capacity(session, 2)
+    assert cut["cancelled_booking_ids"] == [ids[3], ids[2]]  # the last two listed lost their places
+
+    after = bookings_of(session).json()
+    assert [b["booking_id"] for b in after["bookings"]] == ids[:2]
+    assert after["booked"] == len(after["bookings"]) == 2
+
+
+def test_session_bookings_leave_out_cancelled_ones(monkeypatch):
+    monkeypatch.setenv("SWIMSYNC_OPERATOR_TOKEN", TOKEN)
+    session = make_session(capacity=3)
+    book(session, "ana")
+    ben = book(session, "ben")[1]["booking_id"]
+    client.post(f"/bookings/{ben}/cancel", headers={"X-Swimmer-Id": "ben"})
+
+    listed = bookings_of(session).json()
+    assert [b["swimmer_id"] for b in listed["bookings"]] == ["ana"]
+    assert listed["booked"] == 1
+
+
+def test_session_bookings_of_an_empty_or_unknown_session(monkeypatch):
+    monkeypatch.setenv("SWIMSYNC_OPERATOR_TOKEN", TOKEN)
+    empty = bookings_of(make_session(capacity=5)).json()
+    assert (empty["booked"], empty["bookings"]) == (0, [])
+    assert bookings_of(999_999).status_code == 404

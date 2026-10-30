@@ -197,6 +197,14 @@ def change_log(token: OperatorToken = None):
     return read(lambda conn: answer(*operator.change_log(conn)))
 
 
+@app.get("/operator/sessions/{session_id}/bookings")
+def who_is_booked(session_id: int, token: OperatorToken = None):
+    # Who holds a place, oldest booking first. Read-only, but swimmer ids stay behind the token.
+    if not operator_allowed(token):
+        return answer(403, {"error": "operator access required"})
+    return read(lambda conn: answer(*operator.session_bookings(conn, session_id)))
+
+
 @app.post("/operator/sessions/{session_id}/close")
 def close_session(session_id: int, closure: Closure, token: OperatorToken = None):
     if not operator_allowed(token):
