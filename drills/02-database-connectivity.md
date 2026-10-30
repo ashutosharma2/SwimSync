@@ -1,6 +1,6 @@
 # Drill 02: database connectivity
 
-- Date: <!-- the run's date -->
+- Date: 2026-10-25 (first run), 2026-10-26 (rerun after fixing the outbox worker)
 - Fault injected: Toxiproxy between the API and PostgreSQL (`drills/b/run.py`): connections refused from 10 to 20 s, 1 s of latency on every database reply from 30 to 40 s, and at 50 s a victim booking whose COMMIT reaches PostgreSQL while the reply is swallowed
 - Environment: local, one Mac (Toxiproxy 2.13.0, uvicorn, PostgreSQL 18.6). A local experiment, not proof of how a cloud database would behave.
 
@@ -28,16 +28,40 @@ Recorded, with no pass mark: outcomes and latency per phase, time to the first a
 
 ## Evidence
 
-<!-- What actually happened: commands, log lines, measurements, timestamps. -->
+Every run's raw attempts, logs and summary are in [drills/results/](results/).
+
+| Run | What happened |
+|---|---|
+| `b-20261025-235015`, first run | Every hard limit passed, and so did the victim. But the outbox worker crashed when the database went down and never restarted: at the end 282 notices were delivered and 258 were still pending. None were lost. |
+| `b-20261026-000204`, after fixing the worker | PASS. All 473 notices were delivered and none were left pending. |
+
+The rerun, phase by phase:
+
+| Phase | Attempts | What came back |
+|---|---|---|
+| Normal, before the faults | 681 | All answered (p50 12.2 ms, p95 52.3 ms) |
+| Down: connections refused for 10 s | 1,085 | 1,084 fast `database_unavailable` answers (p50 4.4 ms, slowest 27.7 ms) and 1 `outcome_unknown`. The first answer after the proxy came back took 0.02 s. |
+| Between the faults | 779 | All answered (p50 13.5 ms) |
+| Slow: 1 s added to every database reply for 10 s | 120 | All 120 timed out at the client's 2 s |
+| After | 1,577 | 1,551 answered (p50 14.0 ms) and 26 `database_unavailable`, taking about 1 s each |
+
+The victim's first answer was `503 outcome_unknown`, its retry got `200` with its booking, and it holds exactly one booking. Over the whole run, 174 operations ended with an outcome the client never learned, and the hard limits confirm that no swimmer was told a wrong answer.
+
+Against the prediction: the down phase went as I predicted, but I had expected requests to back up after the slow phase, and they didn't.
 
 ## Root cause
 
-<!-- Why it happened, traced to a specific setting or component. -->
+- **The worker crash:** a database connection error was raised outside the code that handles delivery failures, so it ended the worker's loop ([ADR-003](../docs/adr/003-notification-outbox.md)).
+- **The slow phase:** `statement_timeout` limits the database's own work, not delay on the network. With 1 s added to every reply, each request outlasted the client's 2 s timeout instead. The added latency also pushed new connections past the 2 s connect timeout.
+- **The down phase:** the connection failed before any transaction started, so nothing could have been saved, and `database_unavailable` with `booked: false` was the true answer ([ADR-004](../docs/adr/004-two-kinds-of-503.md)).
+- **The victim:** the commit reached PostgreSQL and its reply was swallowed, so the explicit commit raised an error and the API answered `outcome_unknown`. The stored idempotency key made the retry return the saved booking.
 
 ## Fix
 
-<!-- The exact change that restored service, and how you confirmed it. -->
+[b020f1c](https://github.com/ashutosharma2/SwimSync/commit/b020f1c): the worker treats a database error as the database's problem rather than the notice's, so it doesn't use up the row's attempts. It backs off, up to 30 s between tries, and carries on when the database returns. A new test, `test_worker_survives_a_database_outage`, covers it, and the rerun delivered all 473 notices.
 
 ## Prevention
 
-<!-- What stops this happening again, or makes it faster to detect. -->
+- The drill records the outbox at the end of every run, which is how the dead worker showed up even though every pass mark was met.
+- Watching for a growing outbox is parked in [BACKLOG.md](../BACKLOG.md).
+- Drill B is the regression test for database failures. The slow phase is a reminder that `statement_timeout` isn't a network timeout: the client timeout and the connect timeout are what limit a slow network.
