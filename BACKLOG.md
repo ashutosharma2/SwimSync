@@ -9,5 +9,7 @@
 - [ ] Add a NetworkPolicy so only the app's pods can reach the database in the kind cluster ([ADR-015](docs/adr/015-local-kubernetes-with-kind.md)).
 - [ ] Watch the outbox: flag it when pending notices build up, since drill B's dead worker only showed in the numbers ([ADR-003](docs/adr/003-notification-outbox.md)).
 - [ ] Replace the shared operator token with real operator sign-in, so the audit log names a person ([ADR-007](docs/adr/007-operator-shared-token.md)).
+- [ ] Have the operator change log name the swimmers affected, not only booking ids. The audit endpoint would have to return them ([ADR-017](docs/adr/017-operator-token-in-session-storage.md)).
+- [ ] A drill for an operator change during a database outage, so the screen's "not confirmed" path is tested against a real lost reply; only unit tests cover it today.
 - [ ] HTTPS, which needs a domain and a certificate, so it waits for a real deployment.
 - [ ] A waitlist for full sessions (deferred from the MVP).

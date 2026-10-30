@@ -5,7 +5,7 @@
 - **Scenario:** SwimSync books places in fictional swimming sessions so that a confirmed booking always means a reserved place, motivated by being turned away from a booked swim.
 - **Obstacle:** the guarantees live in a few lines of SQL inside transactions, plus a worker that runs separately. Without pictures it's hard to see where the lock is held, what's in each transaction and which process does what.
 - **Action:** one diagram per view, drawn from the code as it is today. Solid lines and boxes are built; dashed ones are planned.
-- **Result:** you can follow a booking from the request to the committed row, see two swimmers race for the last place, see which bookings a capacity cut cancels, see how a notification reaches the inbox even when delivery fails, and see the same app running in containers and on a local Kubernetes cluster.
+- **Result:** you can follow a booking from the request to the committed row, then see two swimmers race for the last place, which bookings a capacity cut cancels, how a notification reaches the inbox even when delivery fails, the same app running in containers and on a local Kubernetes cluster, and what the operator screen says when a change gets no reply.
 - **Troubleshooting:** the diagrams are only useful while they're accurate, so they're updated at the end of every phase, alongside the README.
 
 **Contents**
@@ -30,19 +30,19 @@
 18. [Running with Docker Compose](#18-running-with-docker-compose)
 19. [A local Kubernetes cluster (kind)](#19-a-local-kubernetes-cluster-kind)
 20. [Drill C: rolling update and pod kill (planned)](#20-drill-c-rolling-update-and-pod-kill-planned)
+21. [The operator screen](#21-the-operator-screen)
 
 ---
 
 ## 1. System context
 
-Who and what SwimSync deals with. The pool's front desk sits outside SwimSync: walk-ins and members admitted at the desk don't go through it, which is a known limitation, not something the MVP handles. Operators change capacity, and read who's booked and the change log, through the API with a shared token. Their own screen is partly built and paused, and sign-in is planned.
+Who and what SwimSync deals with. The pool's front desk sits outside SwimSync: walk-ins and members admitted at the desk don't go through it, which is a known limitation, not something the MVP handles. Operators change capacity, and read who's booked and the change log, through the operator screen, which signs in with a shared token. Sign-in for named operators is planned.
 
 ```mermaid
 flowchart LR
     Swimmer(["Swimmer"])
     Operator(["Pool operator"])
     Desk(["Front desk<br/>walk-ins, members"])
-    OpUI["Operator screen<br/>and sign-in"]
 
     subgraph SwimSync["SwimSync (local)"]
         API["Booking API"]
@@ -51,11 +51,10 @@ flowchart LR
 
     Swimmer -- "browse, book, cancel,<br/>my bookings, inbox" --> API
     Worker -- "notices in the in-app inbox" --> Swimmer
-    Operator -- "cut capacity, close a session,<br/>read bookings and the change log<br/>(X-Operator-Token)" --> API
-    Operator -. "planned" .-> OpUI
+    Operator -- "operator screen: cut capacity,<br/>close a session, read bookings<br/>and the change log (X-Operator-Token)" --> API
     Desk -. "not connected:<br/>known limitation" .- Operator
 
-    class Desk,OpUI planned
+    class Desk planned
     classDef planned stroke-dasharray: 5 5
 ```
 
@@ -69,7 +68,7 @@ flowchart LR
     Client["curl, tests,<br/>drill load scripts"]
 
     subgraph Local["Local machine"]
-        UI["React app, pool design<br/>Vite dev server :5173"]
+        UI["React app, pool design<br/>swimmers at /, operators at /operator<br/>Vite dev server :5173"]
         API["Booking API<br/>FastAPI + uvicorn :8001"]
         Worker["Outbox worker<br/>scripts/outbox_worker.py"]
         Adapter["Simulated in-app adapter<br/>can be switched to fail"]
@@ -430,7 +429,7 @@ What SwimSync trusts today, and what it doesn't. The swimmer's identity is only 
 flowchart LR
     subgraph Untrusted["Untrusted: anything can be sent"]
         Client["Swimmer's client"]
-        OpClient["Operator's client"]
+        OpClient["Operator screen<br/>token in sessionStorage"]
     end
 
     subgraph Server["Checked on the server"]
@@ -638,4 +637,35 @@ flowchart LR
 
     class Fault,Check planned
     classDef planned stroke-dasharray: 5 5
+```
+
+## 21. The operator screen
+
+The operator screen is `/operator` in the same React app. The operator signs in by typing the shared token, which the screen checks with a read before keeping it in `sessionStorage` for that tab only ([ADR-017](adr/017-operator-token-in-session-storage.md)). The slider only previews a cut; the server still decides which bookings go. When a change gets no reply, the screen reads the session back before it says anything.
+
+```mermaid
+sequenceDiagram
+    actor Op as Operator
+    participant S as Operator screen
+    participant A as API
+
+    Op->>S: types the token
+    S->>A: GET /operator/audit (X-Operator-Token)
+    alt 200
+        Note over S: keeps the token in sessionStorage
+    else 403
+        Note over S: "That token wasn't accepted", nothing kept
+    end
+    loop every 5 s
+        S->>A: sessions, the chosen session's bookings, the change log
+    end
+    Op->>S: moves the slider (preview only), types a reason, applies
+    S->>A: POST /operator/sessions/{id}/capacity
+    alt 200 with a change
+        Note over S: "Done", and the pool floor ripples
+    else no reply, or 503 outcome_unknown
+        S->>A: GET /operator/sessions/{id}/bookings
+        Note over S: "Done" only if the session shows the change,<br/>otherwise "Not confirmed", or "Couldn't confirm"<br/>if the read fails. Repeating the change is safe.
+    end
+    Note over S,A: any later 403: the token is removed and the sign-in form comes back
 ```

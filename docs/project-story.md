@@ -2,7 +2,7 @@
 
 SOART is Scenario, Obstacles, Actions, Results and Troubleshooting. This file tells how SwimSync was built, from one turned-away booking to a system tested against races, crashes and a failing database. Each decision has its own record in [adr/](adr/).
 
-**Status (2026-10-30):** the booking core, the fault drills A and B, and the AWS design are done. The swimmer screen is built, but the operator screen is paused, so the interface phase stays open. Drill C (Kubernetes) is built and waits for my prediction, and the portfolio write-ups are in progress.
+**Status (2026-10-30):** the booking core, the fault drills A and B, the AWS design and both screens are done. Drill C (Kubernetes) is built and waits for my prediction, and the portfolio write-ups are in progress.
 
 ---
 
@@ -63,7 +63,7 @@ A cut cancels the newest bookings that no longer fit, tells each swimmer why and
 
 ### The design: a demo, then the React app (2026-10-29 to 2026-10-30)
 
-A one-file browser demo ran the booking rules with made-up data and settled the pool design, which then moved into the React app ([ADR-012](adr/012-pool-canvas-beside-react.md), [ADR-013](adr/013-port-the-demo-css.md)). The two endpoints an operator screen needs, who is booked and the change log, are built behind the operator token ([ADR-016](adr/016-operator-reads-who-is-booked.md)). The screen itself is partly built and paused.
+A one-file browser demo ran the booking rules with made-up data and settled the pool design, which then moved into the React app ([ADR-012](adr/012-pool-canvas-beside-react.md), [ADR-013](adr/013-port-the-demo-css.md)). The operator screen at `/operator` reads who is booked and the change log through two endpoints behind the operator token ([ADR-016](adr/016-operator-reads-who-is-booked.md)). The operator signs in by typing the token, which the screen checks with a read and keeps for that browser tab only ([ADR-017](adr/017-operator-token-in-session-storage.md)). A slider previews a cut on the rope of floats, and applying it needs a reason. When a change gets no reply, the screen reads the session back before it says the change is done.
 
 ### Containers and Kubernetes, locally (2026-10-29 to 2026-10-30)
 
@@ -75,7 +75,8 @@ Docker Compose runs the whole app with one command ([ADR-014](adr/014-docker-com
 - **Crashes don't double-book.** In drill A, every hard limit held in every run. A request cut off before its commit rolled back and its retry booked fresh; one cut off after its commit had its reply lost, and the retry got the stored answer. Either way, exactly one booking. HAProxy noticed the dead instance in about 1.9 s.
 - **A failing database gets honest answers.** In drill B, 1,084 requests got a fast "database unavailable" while it was down, service came back 0.02 s after it returned, the swallowed commit was answered "outcome unknown" and then found on retry, and after the worker fix all 473 notices were delivered.
 - **Kubernetes behaves.** With a 5 s pause before each pod stops, a rolling restart answered all 291 requests in a 25 s test. Deleting an API pod while 40 swimmers booked a 20-place session gave exactly 20 bookings, 20 "full" answers and no duplicates.
-- **Tests and CI.** 52 backend and 29 frontend tests (2026-10-30), with five CI jobs on every push, including a throwaway kind cluster.
+- **The operator screen works against the real API.** In a browser check, cutting Lunchtime swim from 10 places to 5 cancelled the three newest bookings, the counter matched the confirmed rows, and the swimmer's card said why. All 55 operator requests carried the token, and a wrong token was refused and not stored.
+- **Tests and CI.** 52 backend and 37 frontend tests (2026-10-30), with five CI jobs on every push, including a throwaway kind cluster.
 - **Cost.** ₹0. The AWS design is validated and has never been applied.
 - **What this doesn't show.** Real users, a real pool, how AWS would behave, or the desk-inventory cause, which is out of scope. The drills are local experiments.
 
@@ -98,4 +99,5 @@ Docker Compose runs the whole app with one command ([ADR-014](adr/014-docker-com
 - **A rolling restart refused requests (2026-10-29).** A stopping pod refused connections while the cluster still sent it traffic: 4 errors in 308 requests. A 5 s pause before each pod stops brought it to none in 291.
 - **CI got a 502 on a brand-new cluster (2026-10-29).** A booking sent 0.25 s after the pods reported ready got a 502. The deploy script now waits until the API answers.
 - **A type that referred to itself (2026-10-29).** In the React port, the pool floor's module kept the floor that's showing in a variable typed from its own create function, which TypeScript can't infer. An explicit interface fixed it.
+- **The sign-in didn't reach the page under test (2026-10-30).** In the operator screen's browser check, I signed in twice, but the browser running the check still showed an empty form and had sent no operator request. Its window was hidden, so the sign-in most likely went to another window. Entering the test value in that browser, and seeing its requests carry the header, fixed it. Lesson: before trusting a manual step in a check, confirm it reached the page under test.
 - **The kind cluster was gone (2026-10-30).** After Docker Desktop restarted, the cluster no longer existed, and the deploy script rebuilt it from nothing.

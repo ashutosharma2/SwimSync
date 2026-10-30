@@ -15,9 +15,9 @@ To try it without installing anything, open [prototype/index.html](prototype/ind
 | 1. Problem framing | ✅ | Desk research, the causes SwimSync designs against, MVP scope |
 | 2. Local core | ✅ | Booking, cancel, idempotency keys, outbox and notifications, honest answers when the database fails, operator capacity changes with an audit log, and operator reads of who's booked and the change log; 52 tests |
 | 3. Fault drills | ✅ | Drill A (app instance killed mid-request) and drill B (database down, slow, and a lost commit reply), both passing. Drill C (a rolling update and a forced pod kill on Kubernetes) is built and waits for its first run |
-| 4. MVP interface | ⏳ | The swimmer screen in the pool design, checked in a browser against the real API (29 frontend tests). The operator screen is paused; its API calls and cut preview are built |
+| 4. MVP interface | ✅ | The swimmer screen and the operator screen at `/operator`, both in the pool design and checked in a browser against the real API (37 frontend tests) |
 | 5. Infrastructure design | ✅ | Terraform for a two-zone AWS VPC, ALB, two instances and RDS; validated locally, never applied. The app also runs with Docker Compose and on a local kind cluster |
-| 6. Portfolio | ⏳ | Architecture diagrams, build log, ADRs 001 to 016 and a browser demo done. Drill write-ups and the project story are drafted and need editing |
+| 6. Portfolio | ⏳ | Architecture diagrams, build log, ADRs 001 to 017 and a browser demo done. Drill write-ups and the project story are drafted and need editing |
 
 The architecture decision records are in [docs/adr/](docs/adr/): one per non-obvious decision, each with the evidence behind it.
 
@@ -52,7 +52,7 @@ I decided not to run interviews or surveys, so SwimSync rests on one personal in
 ## Target users
 
 - Swimmers need a confirmation they can trust, a clear view of their bookings, a cancel that works, and notice of changes before they travel.
-- Operators need sessions that never go over capacity, and a way to cut capacity or close a session that tells the swimmers affected. In the MVP they have two API endpoints protected by a shared token, and a seed script creates the sessions; an operator screen and real sign-in come later.
+- Operators need sessions that never go over capacity, and a way to cut capacity or close a session that tells the swimmers affected. In the MVP they have a screen at `/operator` that signs in with a shared token, and a seed script creates the sessions; sign-in for named operators comes later.
 
 ## MVP scope
 
@@ -65,10 +65,11 @@ Built:
 - In-app notifications fed by an outbox, with a worker that retries and survives database outages
 - Operator capacity changes: a cut cancels the newest bookings that no longer fit, closing a session cancels all of its bookings, each cancelled swimmer gets a notice with the reason, and every change is written to an audit log
 - Operator reads: who holds a place in a session, oldest first, and the change log, newest first, both behind the operator token
+- An operator screen at `/operator`: sign in with the shared token, see a session's bookings as floats, preview a cut with a slider, then apply it or close the session with a reason
 - Running it with Docker Compose, or on a one-node kind cluster with two API replicas
 - A seed script that creates fictional sessions
 
-Deferred: a waitlist, an operator screen with real authentication (its API calls and cut preview are built, and the screen itself is paused), and booking history. I left the waitlist out because it doesn't help with the incident.
+Deferred: a waitlist, sign-in for named operators (the screen uses the shared token), and booking history. I left the waitlist out because it doesn't help with the incident.
 
 Out: payments, real SMS or email, multiple facilities, mobile apps.
 
@@ -77,7 +78,7 @@ Out: payments, real SMS or email, multiple facilities, mobile apps.
 All the diagrams, from the request path to the AWS design, are in [docs/architecture.md](docs/architecture.md). The local system:
 
 ```
-   browser (React, frontend/)             operator (curl for now)
+   browser (React, frontend/)             operator screen (/operator)
      │  /api/* through the Vite dev proxy     │  X-Operator-Token
      │  X-Swimmer-Id, Idempotency-Key         │
      └───────────────────┬────────────────────┘
@@ -102,6 +103,8 @@ PostgreSQL: sessions · bookings · idempotency_keys · outbox · notifications 
 **Operator reads:** `GET /operator/sessions/{id}/bookings` lists a session's confirmed bookings oldest first, which is the reverse of the order a cut cancels in, so the last booking listed is the first to go. It reads the count and the list in one statement, so both come from the same snapshot. `GET /operator/audit` returns the change log, newest first. Both are read-only but sit behind the operator token, because they show swimmer ids ([ADR-016](docs/adr/016-operator-reads-who-is-booked.md)).
 
 **The frontend's rule:** a booking is shown as confirmed only after the server says so. On an uncertain answer, the app retries with the same key after 1, 2 and 4 seconds, then checks "My bookings", and keeps the key so a later "Check again" can't book twice. A full or closed session is a final answer. That logic is in [frontend/src/bookingFlow.ts](frontend/src/bookingFlow.ts), separate from the screens. "My bookings" shows why each cancelled booking was cancelled.
+
+**The operator screen:** `/operator` is a second screen, picked by a path check in [frontend/src/main.tsx](frontend/src/main.tsx) instead of a router. The operator types the shared token into a sign-in form, which checks it with `GET /operator/audit` before keeping it in `sessionStorage` for that tab only. A later 403 sends the screen back to the form ([ADR-017](docs/adr/017-operator-token-in-session-storage.md)). Every 5 s the screen reads the sessions, who is booked in the chosen one and the change log. The bookings are drawn as floats in the order they were made, with a wall at the slider's target, so the floats past the wall are the ones a cut would cancel. The slider only previews. A change needs a reason and the apply button, and closing a session asks for confirmation. If a change gets no reply, the screen reads the session back and says "Done" only if the session shows the change; otherwise it says the change isn't confirmed and that repeating it is safe.
 
 For the drills, two app instances run behind HAProxy (drill A), and Toxiproxy sits between the app and PostgreSQL (drill B). The same app also runs in containers with Docker Compose, and on a one-node kind cluster with two API replicas, where drill C runs ([ADR-014](docs/adr/014-docker-compose-beside-native.md), [ADR-015](docs/adr/015-local-kubernetes-with-kind.md)). Nothing runs on AWS.
 
@@ -136,6 +139,7 @@ MVP controls:
 - Inputs are validated server side: the swimmer id matches `^[A-Za-z0-9_-]{1,64}$` and the idempotency key must be a UUID.
 - Only the owner can cancel a booking.
 - Operator endpoints, including the two reads, need an `X-Operator-Token` header matching `SWIMSYNC_OPERATOR_TOKEN`, compared in constant time (`hmac.compare_digest`). If the variable isn't set, every operator request gets 403.
+- The operator screen keeps the token in `sessionStorage`, never in the URL, the JavaScript bundle or `localStorage` ([ADR-017](docs/adr/017-operator-token-in-session-storage.md)).
 - Database calls time out (500 ms per statement and lock wait, 2 s to connect), so a slow database can't tie up every worker thread.
 - Synthetic data only; `.env`, keys and Terraform state are ignored by Git.
 
@@ -158,7 +162,7 @@ Then open http://127.0.0.1:8088. The API is also reachable at http://127.0.0.1:8
 
 - Every start reseeds the database, so the six sessions are always for tomorrow and earlier bookings are gone.
 - The seed creates session times in the `Asia/Kolkata` time zone, because containers run in UTC. Set `SWIMSYNC_TZ` to use a different one.
-- To try the operator endpoints, start it with a token, `SWIMSYNC_OPERATOR_TOKEN=pick-a-long-random-value docker compose up --build`, and send the same value in `X-Operator-Token` to http://127.0.0.1:8002. Without a token, every operator request gets 403.
+- To try the operator screen or endpoints, start it with a token, `SWIMSYNC_OPERATOR_TOKEN=pick-a-long-random-value docker compose up --build`, then sign in with the same value at http://127.0.0.1:8088/operator, or send it in `X-Operator-Token` to http://127.0.0.1:8002. Without a token, every operator request gets 403.
 - It can run at the same time as the native setup and the drills, which use ports 8001, 5173 and 8080.
 - Stop it with Ctrl+C, or with `docker compose down` if you started it in the background with `-d`.
 
@@ -227,7 +231,7 @@ curl -s -X POST localhost:8001/bookings/1/cancel -H "X-Swimmer-Id: asha"
 curl -s localhost:8001/me/notifications -H "X-Swimmer-Id: asha"
 ```
 
-To try the operator endpoints, start the API with `SWIMSYNC_OPERATOR_TOKEN` set to a value of your choice (without it, every operator request gets 403), then send the same value in `X-Operator-Token`. Locally the API only listens on 127.0.0.1, so any value works; never commit a real one.
+To try the operator screen or endpoints, start the API with `SWIMSYNC_OPERATOR_TOKEN` set to a value of your choice (without it, every operator request gets 403). Then open http://localhost:5173/operator and sign in with that value, or send it in `X-Operator-Token`. Locally the API only listens on 127.0.0.1, so any value works; never commit a real one.
 
 ```bash
 cd ~/projects/swimsync
@@ -249,7 +253,7 @@ To simulate a notification outage, start the worker with `SWIMSYNC_ADAPTER_FAILI
 npm --prefix frontend test
 ```
 
-The backend tests use the `swimsync_test` database (override with `TEST_DATABASE_URL`). Result on 2026-10-30: 52 backend tests and 29 frontend tests passed, locally and in GitHub Actions. The [workflow](.github/workflows/tests.yml) runs both suites against PostgreSQL 18, builds the frontend and both Docker images, deploys them to a throwaway kind cluster and books through it, and runs `terraform validate` on every push to main.
+The backend tests use the `swimsync_test` database (override with `TEST_DATABASE_URL`). Result on 2026-10-30: 52 backend tests and 37 frontend tests passed, locally and in GitHub Actions. The [workflow](.github/workflows/tests.yml) runs both suites against PostgreSQL 18, builds the frontend and both Docker images, deploys them to a throwaway kind cluster and books through it, and runs `terraform validate` on every push to main.
 
 | File | What it proves |
 |---|---|
@@ -260,7 +264,8 @@ The backend tests use the `swimsync_test` database (override with `TEST_DATABASE
 | [tests/test_operator.py](tests/test_operator.py) | A capacity cut cancels the newest bookings, tells each swimmer why and audits who was affected. A cut above the number booked cancels nobody, the same capacity twice writes nothing, and raising capacity brings nobody back. Twenty bookings racing a cut never exceed the new capacity. Closing cancels everyone and refuses new bookings, and closing twice changes nothing. A swimmer cancelling a booking the pool already cancelled changes nothing. Operator endpoints refuse a missing or wrong token. The operator can read who holds a place, oldest first, and the change log, newest first, and both reads refuse a missing token. |
 | [frontend/src/bookingFlow.test.ts](frontend/src/bookingFlow.test.ts) | The Book and Cancel buttons never show "booked" before the server confirms, retry with the same key, resume the same key after a page reload, treat "unavailable" after an uncertain answer as still uncertain, treat a closed session as final, and let "My bookings" decide when retries run out. |
 | [frontend/src/rope.test.ts](frontend/src/rope.test.ts) | The float rope has one float per place, puts yours first, shows a checking float while a booking is in flight, marks about a fifth of the places as the last ones, and copes with counts that don't add up, since the list can be a few seconds old. |
-| [frontend/src/operator/cut.test.ts](frontend/src/operator/cut.test.ts) | The operator's cut preview cancels the newest bookings first, the same order as the server, and cancels nobody when everyone fits. A change counts as done only on a 200 that changed something, and a lost reply or a failed commit is unknown, never a failure. |
+| [frontend/src/operator/cut.test.ts](frontend/src/operator/cut.test.ts) | The operator's cut preview cancels the newest bookings first, the same order as the server, and cancels nobody when everyone fits or capacity goes up. A change counts as done only on a 200 that changed something, and a lost reply or a failed commit is unknown, never a failure. After a lost reply, the screen says done only when the session it reads back shows the change, and says it couldn't confirm when the session can't be read. |
+| [frontend/src/operator/rope.test.ts](frontend/src/operator/rope.test.ts) | The operator's rope puts the wall at the target with the newest bookings past it, shows free places up to the wall when everyone fits, keeps the bookings in the order they were made, and marks the last places before the wall red, never the ones past it. |
 
 With the row lock removed, both booking race tests failed in 3 out of 3 runs: the `CHECK` constraint rejected the oversell. With the lock removed from the capacity change, its race test failed in 5 out of 5 runs. An earlier, weaker version of that test caught the missing lock in only 1 run out of 3; the current one repeats the race five times per run, each time with 15 places already booked and 20 bookings racing a cut to 10.
 
@@ -358,7 +363,7 @@ Stop the API, the frontend and the worker with Ctrl+C.
 - A separate desk inventory isn't handled. If walk-ins or members are admitted at the desk against the same pool, SwimSync's numbers can be correct while the pool is still full. Fixing that needs every admission to go through one system.
 - There's no real authentication: `X-Swimmer-Id` is trusted as sent, and operators share one token, so the audit log can't say which person made a change.
 - Notifications are in-app only and simulated. There's no SMS, email or push, so a swimmer whose booking is cut only finds out if they open the app before setting off.
-- Operators have no screen yet. Capacity changes, closures and the two reads are API calls; the screen is partly built and paused.
+- The operator screen keeps the shared token in `sessionStorage`, so a cross-site scripting bug would expose it. Its change log shows booking ids, not swimmer names, because that's what the API returns.
 - Raising capacity again doesn't bring back cancelled bookings. Those swimmers have to book again, and with no waitlist, anyone can take the place first.
 - The audit log is append-only by convention: the app only ever inserts into it, but nothing in the database stops someone with access from editing a row.
 - PostgreSQL is a single point of failure, and there are no backups. In the AWS design, the database stays single-zone unless `db_multi_az` is turned on.
@@ -371,6 +376,6 @@ Stop the API, the frontend and the worker with Ctrl+C.
 
 - A behind-the-scenes panel showing which instance answered each request, and live notification toasts.
 - Run drill C, and finish editing the drill write-ups and the project story.
-- Finish the operator screen (two columns on desktop, the pool floor, the token kept in sessionStorage), then real sign-in, so the audit log names the person behind each change.
+- Sign-in for named operators, so the audit log names the person behind each change, and a change log that names the swimmers affected.
 - A waitlist that offers a freed place under the same locking rules, including places freed when capacity goes back up.
 - Have the app read its database password from Secrets Manager, as the AWS design expects.
