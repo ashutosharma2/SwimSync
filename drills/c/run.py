@@ -5,8 +5,9 @@ through the web frontend, the way a browser reaches the API, and at 20 s the fau
 
   rollout  kubectl rollout restart deployment/api. New pods start; each old pod gets the 5 s preStop
            pause, then stops. The deployment keeps two replicas throughout.
-  kill     one of the two API pods is force-deleted with no grace period (--grace-period=0 --force):
-           the Kubernetes version of drill A's kill -9.
+  kill     one of the two API pods is force-deleted (--grace-period=0 --force). The Pod leaves the API
+           at once, but on this cluster the kubelet still starts the preStop hook and sends SIGTERM,
+           with 2 s before SIGKILL, so it isn't drill A's kill -9 (drills/03-rolling-update.md).
 
 The hard limits are drill A's, checked by analyse.py against the cluster's database through a
 temporary port-forward. A real run refuses to start until the prediction in

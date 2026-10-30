@@ -1,0 +1,104 @@
+{
+  "label": "Local experiment on one machine (kind), not proof of how a cloud cluster behaves",
+  "mode": "rollout",
+  "evidence": {
+    "old_pods_answered": [
+      "api-67bfff66bf-54gxz",
+      "api-67bfff66bf-d9p7d"
+    ],
+    "new_pods_answered": [
+      "api-76644477fc-d7z7c",
+      "api-76644477fc-kdrpm"
+    ]
+  },
+  "fault_exercised": true,
+  "hard_limits": {
+    "duplicates": {
+      "keys_not_one_to_one": 0,
+      "double_holders": 0,
+      "pass": true
+    },
+    "false_successes": {
+      "count": 0,
+      "pass": true
+    },
+    "consistency": {
+      "sessions": [
+        {
+          "id": 1,
+          "capacity": 24,
+          "booked": 21,
+          "confirmed": 21
+        },
+        {
+          "id": 2,
+          "capacity": 20,
+          "booked": 17,
+          "confirmed": 17
+        },
+        {
+          "id": 3,
+          "capacity": 12,
+          "booked": 12,
+          "confirmed": 12
+        },
+        {
+          "id": 4,
+          "capacity": 10,
+          "booked": 10,
+          "confirmed": 10
+        },
+        {
+          "id": 5,
+          "capacity": 5,
+          "booked": 5,
+          "confirmed": 5
+        },
+        {
+          "id": 6,
+          "capacity": 16,
+          "booked": 16,
+          "confirmed": 16
+        }
+      ],
+      "pass": true
+    }
+  },
+  "recorded": {
+    "operations": 3872,
+    "attempts": 3872,
+    "retries": 0,
+    "failed_attempts": 0,
+    "fault_to_handled_s": 6.27,
+    "fault_to_old_pods_gone_s": 12.72,
+    "outcome_unknown_to_client": 0,
+    "told_no_but_booked": 0,
+    "answered_by": {
+      "api-67bfff66bf-54gxz": 763,
+      "api-67bfff66bf-d9p7d": 884,
+      "api-76644477fc-d7z7c": 1073,
+      "api-76644477fc-kdrpm": 1152
+    },
+    "by_phase": {
+      "before": {
+        "attempts": 1299,
+        "failed": {},
+        "p50_ms": 9.2,
+        "p95_ms": 20.6
+      },
+      "during": {
+        "attempts": 817,
+        "failed": {},
+        "p50_ms": 12.1,
+        "p95_ms": 38.3
+      },
+      "after": {
+        "attempts": 1756,
+        "failed": {},
+        "p50_ms": 9.9,
+        "p95_ms": 23.7
+      }
+    }
+  },
+  "result": "PASS"
+}

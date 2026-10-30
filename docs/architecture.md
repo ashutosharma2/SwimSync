@@ -29,7 +29,7 @@
 17. [Admin access and the database password](#17-admin-access-and-the-database-password)
 18. [Running with Docker Compose](#18-running-with-docker-compose)
 19. [A local Kubernetes cluster (kind)](#19-a-local-kubernetes-cluster-kind)
-20. [Drill C: rolling update and pod kill (planned)](#20-drill-c-rolling-update-and-pod-kill-planned)
+20. [Drill C: rolling update and pod kill](#20-drill-c-rolling-update-and-pod-kill)
 21. [The operator screen](#21-the-operator-screen)
 
 ---
@@ -618,9 +618,9 @@ flowchart LR
 
 The API pods have readiness and liveness probes on `/health`, which deliberately doesn't check the database, so a database outage doesn't take every pod out of the Service at once. Each API and web pod pauses 5 s before it stops, so a rolling restart doesn't refuse requests. The operator token is a Secret created from the shell's `SWIMSYNC_OPERATOR_TOKEN` and never written to a file. CI builds a throwaway cluster on every push and books through it.
 
-## 20. Drill C: rolling update and pod kill (planned)
+## 20. Drill C: rolling update and pod kill
 
-The harness in `drills/c/` is built, and its runs are waiting for the written prediction, so the fault and the check are drawn dashed. Drill A's load books through the web frontend while, at 20 s, the API deployment does a rolling restart or one API pod is force-deleted ([write-up](../drills/03-rolling-update.md)).
+Drill A's load books through the web frontend while, at 20 s, the API deployment does a rolling restart or one API pod is force-deleted ([write-up](../drills/03-rolling-update.md)). The rollout and three kills all kept the hard limits. A force delete still gets SIGTERM and 2 s before SIGKILL on this cluster, so it isn't drill A's `kill -9`.
 
 ```mermaid
 flowchart LR
@@ -632,11 +632,8 @@ flowchart LR
     Check["analyse.py: drill A's hard limits,<br/>through a port-forward to the database"]
 
     Load --> Web --> Api --> DB
-    Fault -.-> Api
-    Check -.-> DB
-
-    class Fault,Check planned
-    classDef planned stroke-dasharray: 5 5
+    Fault --> Api
+    Check --> DB
 ```
 
 ## 21. The operator screen

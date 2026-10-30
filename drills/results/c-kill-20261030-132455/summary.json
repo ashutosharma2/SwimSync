@@ -1,0 +1,104 @@
+{
+  "label": "Local experiment on one machine (kind), not proof of how a cloud cluster behaves",
+  "mode": "kill",
+  "evidence": {
+    "killed_pod": "api-76644477fc-d7z7c",
+    "killed_pod_answers_before_kill": 501,
+    "replacement_pods_answered": [
+      "api-76644477fc-jlsfg"
+    ]
+  },
+  "fault_exercised": true,
+  "hard_limits": {
+    "duplicates": {
+      "keys_not_one_to_one": 0,
+      "double_holders": 0,
+      "pass": true
+    },
+    "false_successes": {
+      "count": 0,
+      "pass": true
+    },
+    "consistency": {
+      "sessions": [
+        {
+          "id": 1,
+          "capacity": 24,
+          "booked": 19,
+          "confirmed": 19
+        },
+        {
+          "id": 2,
+          "capacity": 20,
+          "booked": 17,
+          "confirmed": 17
+        },
+        {
+          "id": 3,
+          "capacity": 12,
+          "booked": 10,
+          "confirmed": 10
+        },
+        {
+          "id": 4,
+          "capacity": 10,
+          "booked": 10,
+          "confirmed": 10
+        },
+        {
+          "id": 5,
+          "capacity": 5,
+          "booked": 5,
+          "confirmed": 5
+        },
+        {
+          "id": 6,
+          "capacity": 16,
+          "booked": 16,
+          "confirmed": 16
+        }
+      ],
+      "pass": true
+    }
+  },
+  "recorded": {
+    "operations": 2993,
+    "attempts": 3039,
+    "retries": 46,
+    "failed_attempts": 46,
+    "fault_to_handled_s": 3.65,
+    "fault_to_old_pods_gone_s": null,
+    "outcome_unknown_to_client": 0,
+    "told_no_but_booked": 0,
+    "answered_by": {
+      "api-76644477fc-d7z7c": 515,
+      "api-76644477fc-jlsfg": 939,
+      "api-76644477fc-kdrpm": 1555
+    },
+    "by_phase": {
+      "before": {
+        "attempts": 999,
+        "failed": {
+          "ReadTimeout": 30
+        },
+        "p50_ms": 22.7,
+        "p95_ms": 585.6
+      },
+      "during": {
+        "attempts": 234,
+        "failed": {},
+        "p50_ms": 15.1,
+        "p95_ms": 69.9
+      },
+      "after": {
+        "attempts": 1806,
+        "failed": {
+          "503": 16
+        },
+        "p50_ms": 24.6,
+        "p95_ms": 703.2
+      }
+    }
+  },
+  "result": "PASS"
+}

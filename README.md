@@ -14,7 +14,7 @@ To try it without installing anything, open [prototype/index.html](prototype/ind
 |---|---|---|
 | 1. Problem framing | ✅ | Desk research, the causes SwimSync designs against, MVP scope |
 | 2. Local core | ✅ | Booking, cancel, idempotency keys, outbox and notifications, honest answers when the database fails, operator capacity changes with an audit log, and operator reads of who's booked and the change log; 52 tests |
-| 3. Fault drills | ✅ | Drill A (app instance killed mid-request) and drill B (database down, slow, and a lost commit reply), both passing. Drill C (a rolling update and a forced pod kill on Kubernetes) is built and waits for its first run |
+| 3. Fault drills | ✅ | Drill A (app instance killed mid-request) and drill B (database down, slow, and a lost commit reply), both passing. Drill C (a rolling update and three forced pod kills on Kubernetes) passed too |
 | 4. MVP interface | ✅ | The swimmer screen and the operator screen at `/operator`, both in the pool design and checked in a browser against the real API (37 frontend tests) |
 | 5. Infrastructure design | ✅ | Terraform for a two-zone AWS VPC, ALB, two instances and RDS; validated locally, never applied. The app also runs with Docker Compose and on a local kind cluster |
 | 6. Portfolio | ⏳ | Architecture diagrams, build log, ADRs 001 to 017 and a browser demo done. Drill write-ups and the project story are drafted and need editing |
@@ -290,7 +290,14 @@ Along the way: delaying every request by 100 ms inside the lock overloaded the s
 | First run | The hard limits and the lost-commit case passed: the swimmer got `outcome_unknown`, and the retry returned the saved booking. But the outbox worker crashed when the database went down and never came back, leaving 258 notifications undelivered. None were lost, because they were stored safely. The drill's checks passed while the system was clearly unhealthy, which is why the recorded measurements matter as much as the pass marks |
 | After fixing the worker | Pass. Down phase: 1,084 fast `database_unavailable` answers and service back 0.02 s after the proxy returned. Slow phase: all 120 attempts timed out at 2 s, because `statement_timeout` limits the database's own work, not network delay. All 473 notifications delivered |
 
-**Drill C, rolling update and forced pod kill** ([write-up](drills/03-rolling-update.md)). On the local kind cluster, drill A's load runs through the web frontend while, at 20 s, the API deployment does a rolling restart or one API pod is force-deleted. The hard limits are drill A's. The harness is built and its dry run passed; the real runs wait for my written prediction.
+**Drill C, rolling update and forced pod kill** ([write-up](drills/03-rolling-update.md)). On the local kind cluster, drill A's load runs through the web frontend while, at 20 s, the API deployment does a rolling restart or one API pod is force-deleted. The hard limits are drill A's.
+
+| Run | Result |
+|---|---|
+| Rolling restart | Pass. 3,872 operations and not one failed attempt. Old and new pods both answered, and the new pods were ready 6.27 s after the restart began |
+| Forced kill, three times | Pass every time. A force delete isn't `kill -9` here: the kubelet still sends SIGTERM with 2 s before SIGKILL. Twice, nothing failed around the kill. Once, answers almost stopped for about 9 s (82 client timeouts, 13 `database_unavailable`, six 502s), which is only partly explained. In two of the runs, 15 bookings committed with their reply lost, and each retry got the stored answer |
+
+A database stall made all 30 swimmers time out at once before one of the kills, as in drill A. Its cause is still unknown.
 
 ## Cost constraints and free-tier assumptions
 
@@ -375,7 +382,7 @@ Stop the API, the frontend and the worker with Ctrl+C.
 ## Future improvements
 
 - A behind-the-scenes panel showing which instance answered each request, and live notification toasts.
-- Run drill C, and finish editing the drill write-ups and the project story.
+- Find what stalls the database in drills A and C, and finish editing the drill write-ups and the project story.
 - Sign-in for named operators, so the audit log names the person behind each change, and a change log that names the swimmers affected.
 - A waitlist that offers a freed place under the same locking rules, including places freed when capacity goes back up.
 - Have the app read its database password from Secrets Manager, as the AWS design expects.

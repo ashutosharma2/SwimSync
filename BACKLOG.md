@@ -2,7 +2,8 @@
 
 <!-- - [ ] One idea per line. Tick it when done. -->
 
-- [ ] Run drill C, the rolling update and the forced pod kill, once the prediction is written ([drills/03](drills/03-rolling-update.md)).
+- [x] Run drill C, the rolling update and the forced pod kill, once the prediction is written ([drills/03](drills/03-rolling-update.md)).
+- [ ] Find what stalls the database: every swimmer timing out at once before the fault in drill A and drill C, and the 9 s outage in drill C's second kill. Turn on `log_lock_waits` and sample `pg_stat_activity` during the runs ([drills/03](drills/03-rolling-update.md)).
 - [ ] Clean up old idempotency keys. The table grows by one row per booking request and nothing deletes them ([ADR-002](docs/adr/002-idempotency-keys.md)).
 - [ ] Have the app read the database password from the RDS-managed secret at start-up; today it only takes `DATABASE_URL` ([ADR-010](docs/adr/010-rds-managed-secret.md)).
 - [ ] Split the test dependencies out of `backend/requirements.txt`, so the backend image doesn't carry pytest and httpx ([ADR-014](docs/adr/014-docker-compose-beside-native.md)).

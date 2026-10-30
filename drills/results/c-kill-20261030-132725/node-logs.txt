@@ -1,0 +1,88 @@
+# Node and database log lines for c-kill-20261030-132725 (UTC), saved 2026-10-30 from the kind node's journal and the db pod
+
+## containerd
+2026-10-30T07:57:53.756265+00:00 time="2026-10-30T07:57:53.755285257Z" level=info msg="StopContainer for \"3cfa7a84bcfa3fa8ffeafced642fb2faee2f1615eec02bd41114039fcd758ac1\" with timeout 2 (s)"
+2026-10-30T07:57:53.846433+00:00 time="2026-10-30T07:57:53.838285132Z" level=info msg="Stop container \"3cfa7a84bcfa3fa8ffeafced642fb2faee2f1615eec02bd41114039fcd758ac1\" with signal terminated"
+2026-10-30T07:57:56.213307+00:00 time="2026-10-30T07:57:56.212582717Z" level=info msg="Kill container \"3cfa7a84bcfa3fa8ffeafced642fb2faee2f1615eec02bd41114039fcd758ac1\""
+2026-10-30T07:57:56.783703+00:00 time="2026-10-30T07:57:56.783637550Z" level=info msg="received container exit event container_id:\"3cfa7a84bcfa3fa8ffeafced642fb2faee2f1615eec02bd41114039fcd758ac1\"  id:\"3cfa7a84bcfa3fa8ffeafced642fb2faee2f1615eec02bd41114039
+2026-10-30T07:57:59.095173+00:00 time="2026-10-30T07:57:59.094069468Z" level=info msg="StopContainer for \"3cfa7a84bcfa3fa8ffeafced642fb2faee2f1615eec02bd41114039fcd758ac1\" returns successfully"
+2026-10-30T07:58:00.551268+00:00 time="2026-10-30T07:58:00.546862552Z" level=info msg="StartContainer for \"5c841af02561c56135877b84320e35e15d051169be846669a99662eeeecb73c8\""
+2026-10-30T07:58:01.402746+00:00 time="2026-10-30T07:58:01.393287969Z" level=info msg="StartContainer for \"5c841af02561c56135877b84320e35e15d051169be846669a99662eeeecb73c8\" returns successfully"
+
+## kubelet
+2026-10-30T07:57:56.617165+00:00 E1030 07:57:56.616965     742 kuberuntime_container.go:794] "PreStop hook failed" err="command 'sleep 5' exited with 137: " pod="swimsync/api-76644477fc-jlsfg" podUID="716a6706-4da6-4853-b4ed-1a50abc78b35" containerName="api" c
+
+## PostgreSQL
+2026-10-30 07:57:53.025 UTC [89] LOG:  checkpoint starting: time
+2026-10-30 07:57:53.332 UTC [110268] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:53.332 UTC [110268] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:53.348 UTC [110269] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:53.348 UTC [110269] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:53.383 UTC [110267] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:53.383 UTC [110267] CONTEXT:  while locking tuple (0,27) in relation "sessions"
+2026-10-30 07:57:53.383 UTC [110267] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:53.435 UTC [110277] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:53.435 UTC [110277] STATEMENT:  SELECT 1 FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:53.435 UTC [110266] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:53.435 UTC [110266] CONTEXT:  while locking tuple (0,27) in relation "sessions"
+2026-10-30 07:57:53.435 UTC [110266] STATEMENT:  SELECT 1 FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:53.440 UTC [110272] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:53.440 UTC [110272] CONTEXT:  while locking tuple (0,27) in relation "sessions"
+2026-10-30 07:57:53.440 UTC [110272] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:53.574 UTC [110280] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:53.574 UTC [110280] CONTEXT:  while locking tuple (0,28) in relation "sessions"
+2026-10-30 07:57:53.574 UTC [110280] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:53.710 UTC [110290] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:53.710 UTC [110290] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:55.638 UTC [110307] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:55.638 UTC [110307] CONTEXT:  while locking updated version (0,31) of tuple in relation "sessions"
+2026-10-30 07:57:55.638 UTC [110307] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:57.036 UTC [110340] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:57.036 UTC [110340] CONTEXT:  while locking updated version (0,44) of tuple in relation "sessions"
+2026-10-30 07:57:57.036 UTC [110340] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:57.409 UTC [110347] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:57.409 UTC [110347] CONTEXT:  while locking updated version (0,43) of tuple in relation "sessions"
+2026-10-30 07:57:57.409 UTC [110347] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:57.819 UTC [110361] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:57.819 UTC [110361] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:57.881 UTC [110373] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:57.893 UTC [110360] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:57.893 UTC [110360] CONTEXT:  while locking tuple (0,12) in relation "sessions"
+2026-10-30 07:57:57.893 UTC [110360] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:57.914 UTC [110348] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:57.914 UTC [110348] CONTEXT:  while locking tuple (0,39) in relation "sessions"
+2026-10-30 07:57:57.914 UTC [110348] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:57.951 UTC [110363] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:57.951 UTC [110363] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:57.970 UTC [110362] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:57.970 UTC [110362] CONTEXT:  while locking tuple (0,12) in relation "sessions"
+2026-10-30 07:57:57.970 UTC [110362] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:57.959 UTC [110372] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:57.959 UTC [110372] CONTEXT:  while locking updated version (0,45) of tuple in relation "sessions"
+2026-10-30 07:57:57.959 UTC [110372] STATEMENT:  SELECT 1 FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:58.018 UTC [110359] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:58.018 UTC [110359] STATEMENT:  SELECT 1 FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:58.536 UTC [110353] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:58.536 UTC [110353] CONTEXT:  while locking tuple (0,44) in relation "sessions"
+2026-10-30 07:57:58.536 UTC [110353] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:57:59.239 UTC [110368] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:59.239 UTC [110368] STATEMENT:  SELECT b.session_id, s.name FROM bookings b JOIN sessions s ON s.id = b.session_id WHERE b.id = $1 AND b.swimmer_id = $2
+2026-10-30 07:57:59.281 UTC [110375] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:57:59.281 UTC [110375] STATEMENT:  UPDATE bookings SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'swimmer' WHERE id = $1
+2026-10-30 07:58:00.097 UTC [110370] LOG:  could not receive data from client: Connection reset by peer
+2026-10-30 07:58:00.101 UTC [110374] LOG:  could not receive data from client: Connection reset by peer
+2026-10-30 07:58:00.104 UTC [110367] LOG:  could not receive data from client: Connection reset by peer
+2026-10-30 07:58:00.101 UTC [110371] LOG:  could not receive data from client: Connection reset by peer
+2026-10-30 07:58:06.531 UTC [110930] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:58:06.531 UTC [110930] CONTEXT:  while locking tuple (0,93) in relation "sessions"
+2026-10-30 07:58:06.531 UTC [110930] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:58:06.543 UTC [110919] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:58:06.543 UTC [110919] CONTEXT:  while locking tuple (0,76) in relation "sessions"
+2026-10-30 07:58:06.543 UTC [110919] STATEMENT:  SELECT name, capacity, booked, status FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:58:06.572 UTC [110926] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:58:06.572 UTC [110926] CONTEXT:  while locking tuple (0,72) in relation "sessions"
+2026-10-30 07:58:06.572 UTC [110926] STATEMENT:  SELECT 1 FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:58:06.671 UTC [110933] ERROR:  canceling statement due to statement timeout
+2026-10-30 07:58:06.671 UTC [110933] CONTEXT:  while locking tuple (0,72) in relation "sessions"
+2026-10-30 07:58:06.671 UTC [110933] STATEMENT:  SELECT 1 FROM sessions WHERE id = $1 FOR UPDATE
+2026-10-30 07:58:25.521 UTC [89] LOG:  checkpoint complete: wrote 274 buffers (1.7%), wrote 28 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=32.187 s, sync=0.031 s, total=32.497 s; sync files=160, long

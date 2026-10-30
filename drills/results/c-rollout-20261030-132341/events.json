@@ -1,0 +1,17 @@
+{
+  "mode": "rollout",
+  "duration_s": 60,
+  "load_start": 1793346828.611995,
+  "pods_before": [
+    "api-67bfff66bf-54gxz",
+    "api-67bfff66bf-d9p7d"
+  ],
+  "fault_at": 1793346848.942615,
+  "fault_done": 1793346855.212847,
+  "old_pods_gone": 1793346861.659796,
+  "pods_after": [
+    "api-76644477fc-d7z7c",
+    "api-76644477fc-kdrpm"
+  ],
+  "load_end": 1793346889.487029
+}

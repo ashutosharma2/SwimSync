@@ -1,0 +1,131 @@
+LAST SEEN   TYPE      REASON              OBJECT                         MESSAGE
+4m21s       Normal    Scheduled           pod/seed-f7xdc                 Successfully assigned swimsync/seed-f7xdc to swimsync-control-plane
+40s         Normal    Scheduled           pod/api-76644477fc-46dfj       Successfully assigned swimsync/api-76644477fc-46dfj to swimsync-control-plane
+6m26s       Normal    Scheduled           pod/api-76644477fc-jlsfg       Successfully assigned swimsync/api-76644477fc-jlsfg to swimsync-control-plane
+65s         Normal    Scheduled           pod/seed-f8j2x                 Successfully assigned swimsync/seed-f8j2x to swimsync-control-plane
+12m         Normal    Scheduled           pod/web-755f987f6b-xm6s8       Successfully assigned swimsync/web-755f987f6b-xm6s8 to swimsync-control-plane
+6m50s       Normal    Scheduled           pod/seed-89q2q                 Successfully assigned swimsync/seed-89q2q to swimsync-control-plane
+12m         Normal    Scheduled           pod/seed-bw9vl                 Successfully assigned swimsync/seed-bw9vl to swimsync-control-plane
+12m         Normal    Scheduled           pod/worker-5f497b58b4-mhf2z    Successfully assigned swimsync/worker-5f497b58b4-mhf2z to swimsync-control-plane
+12m         Normal    Scheduled           pod/api-67bfff66bf-d9p7d       Successfully assigned swimsync/api-67bfff66bf-d9p7d to swimsync-control-plane
+3m54s       Normal    Scheduled           pod/api-76644477fc-js4zg       Successfully assigned swimsync/api-76644477fc-js4zg to swimsync-control-plane
+7m38s       Normal    Scheduled           pod/api-76644477fc-kdrpm       Successfully assigned swimsync/api-76644477fc-kdrpm to swimsync-control-plane
+12m         Normal    Scheduled           pod/api-67bfff66bf-54gxz       Successfully assigned swimsync/api-67bfff66bf-54gxz to swimsync-control-plane
+8m4s        Normal    Scheduled           pod/seed-l2f67                 Successfully assigned swimsync/seed-l2f67 to swimsync-control-plane
+7m34s       Normal    Scheduled           pod/api-76644477fc-d7z7c       Successfully assigned swimsync/api-76644477fc-d7z7c to swimsync-control-plane
+19m         Warning   Unhealthy           pod/web-cd9c4675-lcpw5         Readiness probe failed: Get "http://10.244.0.7:80/": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+19m         Warning   Unhealthy           pod/api-7d74cd8956-lzl5g       Liveness probe failed: Get "http://10.244.0.10:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+19m         Warning   Unhealthy           pod/api-7d74cd8956-vfjdw       Liveness probe failed: Get "http://10.244.0.9:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+19m         Warning   Unhealthy           pod/api-7d74cd8956-lzl5g       Readiness probe failed: Get "http://10.244.0.10:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+19m         Warning   Unhealthy           pod/api-7d74cd8956-vfjdw       Readiness probe failed: Get "http://10.244.0.9:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+12m         Normal    SuccessfulCreate    job/seed                       Created pod: seed-bw9vl
+12m         Normal    Created             pod/seed-bw9vl                 Container created
+12m         Normal    Started             pod/seed-bw9vl                 Container started
+12m         Normal    Pulled              pod/seed-bw9vl                 Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+12m         Normal    ScalingReplicaSet   deployment/worker              Scaled up replica set worker-5f497b58b4 from 0 to 1
+12m         Normal    ScalingReplicaSet   deployment/web                 Scaled up replica set web-755f987f6b from 0 to 1
+12m         Normal    ScalingReplicaSet   deployment/api                 Scaled up replica set api-67bfff66bf from 0 to 1
+12m         Normal    Completed           job/seed                       Job completed
+12m         Normal    SuccessfulCreate    replicaset/worker-5f497b58b4   Created pod: worker-5f497b58b4-mhf2z
+12m         Normal    SuccessfulCreate    replicaset/api-67bfff66bf      Created pod: api-67bfff66bf-d9p7d
+12m         Normal    ScalingReplicaSet   deployment/worker              Scaled down replica set worker-557d749bf7 from 1 to 0
+12m         Normal    Pulled              pod/api-67bfff66bf-d9p7d       Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+12m         Normal    SuccessfulCreate    replicaset/web-755f987f6b      Created pod: web-755f987f6b-xm6s8
+12m         Normal    Killing             pod/worker-557d749bf7-wjsl2    Stopping container worker
+12m         Normal    Created             pod/api-67bfff66bf-d9p7d       Container created
+12m         Warning   Unhealthy           pod/web-755f987f6b-xm6s8       Readiness probe failed: Get "http://10.244.0.15:80/": dial tcp 10.244.0.15:80: connect: connection refused
+12m         Normal    Started             pod/web-755f987f6b-xm6s8       Container started
+12m         Normal    Created             pod/web-755f987f6b-xm6s8       Container created
+12m         Normal    Pulled              pod/web-755f987f6b-xm6s8       Container image "swimsync-web:latest" already present on machine and can be accessed by the pod
+12m         Normal    SuccessfulDelete    replicaset/worker-557d749bf7   Deleted pod: worker-557d749bf7-wjsl2
+12m         Normal    Started             pod/api-67bfff66bf-d9p7d       Container started
+12m         Normal    Pulled              pod/worker-5f497b58b4-mhf2z    Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+12m         Normal    Created             pod/worker-5f497b58b4-mhf2z    Container created
+12m         Normal    Started             pod/worker-5f497b58b4-mhf2z    Container started
+12m         Warning   Unhealthy           pod/api-67bfff66bf-d9p7d       Readiness probe failed: Get "http://10.244.0.16:8000/health": dial tcp 10.244.0.16:8000: connect: connection refused
+12m         Normal    ScalingReplicaSet   deployment/web                 Scaled down replica set web-cd9c4675 from 1 to 0
+12m         Normal    Killing             pod/web-cd9c4675-lcpw5         Stopping container web
+12m         Normal    SuccessfulDelete    replicaset/web-cd9c4675        Deleted pod: web-cd9c4675-lcpw5
+12m         Normal    ScalingReplicaSet   deployment/api                 Scaled up replica set api-67bfff66bf from 1 to 2
+12m         Normal    Killing             pod/api-7d74cd8956-lzl5g       Stopping container api
+12m         Normal    SuccessfulCreate    replicaset/api-67bfff66bf      Created pod: api-67bfff66bf-54gxz
+12m         Normal    ScalingReplicaSet   deployment/api                 Scaled down replica set api-7d74cd8956 from 2 to 1
+12m         Normal    SuccessfulDelete    replicaset/api-7d74cd8956      Deleted pod: api-7d74cd8956-lzl5g
+12m         Normal    Pulled              pod/api-67bfff66bf-54gxz       Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+12m         Normal    Created             pod/api-67bfff66bf-54gxz       Container created
+12m         Normal    Started             pod/api-67bfff66bf-54gxz       Container started
+12m         Warning   Unhealthy           pod/api-67bfff66bf-54gxz       Readiness probe failed: Get "http://10.244.0.17:8000/health": dial tcp 10.244.0.17:8000: connect: connection refused
+12m         Normal    Killing             pod/api-7d74cd8956-vfjdw       Stopping container api
+12m         Normal    ScalingReplicaSet   deployment/api                 Scaled down replica set api-7d74cd8956 from 1 to 0
+12m         Normal    SuccessfulDelete    replicaset/api-7d74cd8956      Deleted pod: api-7d74cd8956-vfjdw
+12m         Warning   Unhealthy           pod/api-7d74cd8956-lzl5g       Readiness probe failed: Get "http://10.244.0.10:8000/health": dial tcp 10.244.0.10:8000: connect: connection refused
+12m         Warning   Unhealthy           pod/api-7d74cd8956-vfjdw       Readiness probe failed: Get "http://10.244.0.9:8000/health": dial tcp 10.244.0.9:8000: connect: connection refused
+10m         Warning   Unhealthy           pod/api-67bfff66bf-54gxz       Readiness probe failed: Get "http://10.244.0.17:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+8m21s       Warning   Unhealthy           pod/web-755f987f6b-xm6s8       Readiness probe failed: Get "http://10.244.0.15:80/": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+8m21s       Warning   Unhealthy           pod/api-67bfff66bf-54gxz       Liveness probe failed: Get "http://10.244.0.17:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+8m21s       Warning   Unhealthy           pod/api-67bfff66bf-d9p7d       Readiness probe failed: Get "http://10.244.0.16:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+8m5s        Normal    SuccessfulCreate    job/seed                       Created pod: seed-l2f67
+8m4s        Normal    Pulled              pod/seed-l2f67                 Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+8m4s        Normal    Started             pod/seed-l2f67                 Container started
+8m4s        Normal    Created             pod/seed-l2f67                 Container created
+7m59s       Normal    Completed           job/seed                       Job completed
+7m38s       Normal    Pulled              pod/api-76644477fc-kdrpm       Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+7m38s       Normal    Started             pod/api-76644477fc-kdrpm       Container started
+7m38s       Normal    SuccessfulCreate    replicaset/api-76644477fc      Created pod: api-76644477fc-kdrpm
+7m38s       Normal    Created             pod/api-76644477fc-kdrpm       Container created
+7m38s       Normal    ScalingReplicaSet   deployment/api                 Scaled up replica set api-76644477fc from 0 to 1
+7m37s       Warning   Unhealthy           pod/api-76644477fc-kdrpm       Readiness probe failed: Get "http://10.244.0.19:8000/health": dial tcp 10.244.0.19:8000: connect: connection refused
+7m35s       Normal    ScalingReplicaSet   deployment/api                 Scaled up replica set api-76644477fc from 1 to 2
+7m35s       Normal    ScalingReplicaSet   deployment/api                 Scaled down replica set api-67bfff66bf from 2 to 1
+7m35s       Normal    Pulled              pod/api-76644477fc-d7z7c       Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+7m35s       Normal    SuccessfulDelete    replicaset/api-67bfff66bf      Deleted pod: api-67bfff66bf-54gxz
+7m35s       Normal    Created             pod/api-76644477fc-d7z7c       Container created
+7m35s       Normal    Started             pod/api-76644477fc-d7z7c       Container started
+7m35s       Normal    SuccessfulCreate    replicaset/api-76644477fc      Created pod: api-76644477fc-d7z7c
+7m35s       Normal    Killing             pod/api-67bfff66bf-54gxz       Stopping container api
+7m34s       Warning   Unhealthy           pod/api-76644477fc-d7z7c       Readiness probe failed: Get "http://10.244.0.20:8000/health": dial tcp 10.244.0.20:8000: connect: connection refused
+7m32s       Normal    ScalingReplicaSet   deployment/api                 Scaled down replica set api-67bfff66bf from 1 to 0
+7m32s       Normal    SuccessfulDelete    replicaset/api-67bfff66bf      Deleted pod: api-67bfff66bf-d9p7d
+7m32s       Normal    Killing             pod/api-67bfff66bf-d9p7d       Stopping container api
+6m51s       Normal    Created             pod/seed-89q2q                 Container created
+6m51s       Normal    Pulled              pod/seed-89q2q                 Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+6m51s       Normal    Started             pod/seed-89q2q                 Container started
+6m51s       Normal    SuccessfulCreate    job/seed                       Created pod: seed-89q2q
+6m48s       Normal    Completed           job/seed                       Job completed
+6m31s       Warning   Unhealthy           pod/api-76644477fc-d7z7c       Readiness probe failed: Get "http://10.244.0.20:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+6m27s       Normal    Killing             pod/api-76644477fc-d7z7c       Stopping container api
+6m27s       Normal    SuccessfulCreate    replicaset/api-76644477fc      Created pod: api-76644477fc-jlsfg
+6m26s       Normal    Started             pod/api-76644477fc-jlsfg       Container started
+6m26s       Warning   Unhealthy           pod/api-76644477fc-jlsfg       Readiness probe failed: Get "http://10.244.0.22:8000/health": dial tcp 10.244.0.22:8000: connect: connection refused
+6m26s       Normal    Pulled              pod/api-76644477fc-jlsfg       Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+6m26s       Normal    Created             pod/api-76644477fc-jlsfg       Container created
+6m25s       Warning   FailedPreStopHook   pod/api-76644477fc-d7z7c       PreStopHook failed
+4m44s       Warning   Unhealthy           pod/api-76644477fc-jlsfg       Readiness probe failed: Get "http://10.244.0.22:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+4m21s       Normal    Pulled              pod/seed-f7xdc                 Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+4m21s       Normal    SuccessfulCreate    job/seed                       Created pod: seed-f7xdc
+4m20s       Normal    Created             pod/seed-f7xdc                 Container created
+4m20s       Normal    Started             pod/seed-f7xdc                 Container started
+4m17s       Normal    Completed           job/seed                       Job completed
+3m55s       Normal    Killing             pod/api-76644477fc-jlsfg       Stopping container api
+3m55s       Normal    SuccessfulCreate    replicaset/api-76644477fc      Created pod: api-76644477fc-js4zg
+3m52s       Warning   Unhealthy           pod/api-76644477fc-kdrpm       Liveness probe failed: Get "http://10.244.0.19:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+3m51s       Warning   FailedPreStopHook   pod/api-76644477fc-jlsfg       PreStopHook failed
+3m48s       Normal    Pulled              pod/api-76644477fc-js4zg       Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+3m48s       Warning   Unhealthy           pod/db-76cb8948c8-nv8qs        Readiness probe failed: command timed out: "pg_isready -h 127.0.0.1 -U swimsync -d swimsync" timed out after 1s
+3m47s       Normal    Created             pod/api-76644477fc-js4zg       Container created
+3m47s       Warning   Unhealthy           pod/api-76644477fc-kdrpm       Readiness probe failed: Get "http://10.244.0.19:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+3m46s       Normal    Started             pod/api-76644477fc-js4zg       Container started
+3m44s       Warning   Unhealthy           pod/api-76644477fc-js4zg       Readiness probe failed: Get "http://10.244.0.24:8000/health": dial tcp 10.244.0.24:8000: connect: connection refused
+3m44s       Warning   Unhealthy           pod/api-76644477fc-js4zg       Liveness probe failed: Get "http://10.244.0.24:8000/health": dial tcp 10.244.0.24:8000: connect: connection refused
+66s         Normal    SuccessfulCreate    job/seed                       Created pod: seed-f8j2x
+65s         Normal    Pulled              pod/seed-f8j2x                 Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+65s         Normal    Started             pod/seed-f8j2x                 Container started
+65s         Normal    Created             pod/seed-f8j2x                 Container created
+62s         Normal    Completed           job/seed                       Job completed
+41s         Normal    Killing             pod/api-76644477fc-js4zg       Stopping container api
+41s         Normal    SuccessfulCreate    replicaset/api-76644477fc      Created pod: api-76644477fc-46dfj
+40s         Normal    Pulled              pod/api-76644477fc-46dfj       Container image "swimsync-backend:latest" already present on machine and can be accessed by the pod
+40s         Warning   Unhealthy           pod/api-76644477fc-46dfj       Readiness probe failed: Get "http://10.244.0.26:8000/health": dial tcp 10.244.0.26:8000: connect: connection refused
+40s         Normal    Created             pod/api-76644477fc-46dfj       Container created
+40s         Normal    Started             pod/api-76644477fc-46dfj       Container started
+39s         Warning   FailedPreStopHook   pod/api-76644477fc-js4zg       PreStopHook failed

@@ -1,0 +1,17 @@
+{
+  "mode": "kill",
+  "duration_s": 60,
+  "load_start": 1793346900.099721,
+  "pods_before": [
+    "api-76644477fc-d7z7c",
+    "api-76644477fc-kdrpm"
+  ],
+  "fault_at": 1793346920.500354,
+  "killed_pod": "api-76644477fc-d7z7c",
+  "fault_done": 1793346924.1550012,
+  "pods_after": [
+    "api-76644477fc-jlsfg",
+    "api-76644477fc-kdrpm"
+  ],
+  "load_end": 1793346961.352126
+}

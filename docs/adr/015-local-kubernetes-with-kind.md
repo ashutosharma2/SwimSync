@@ -39,10 +39,10 @@ Alternatives considered:
 - Checked on 2026-10-29 with kind 0.33.0 (Kubernetes v1.37.0) on Docker Desktop: the script brought everything up, and the smoke test passed. The page loaded, a booking returned 201, its retry with the same key returned 200 with the same booking, and the worker delivered the notice. Twelve requests were answered by both API pods (7 and 5). An operator request without a token got 403, and the first session showed at 06:30 local time.
 - **Deleting a pod during bookings** (a demonstration, not a recorded drill): 40 swimmers booked Morning lane swim (20 places) over about 8 seconds, and one API pod was deleted partway through. Every request got an answer with no retries: 20 confirmed and 20 told the session was full. Afterwards the counter was 20, there were 20 confirmed rows, no swimmer had two bookings, and Kubernetes had already replaced the deleted pod.
 - A rolling restart of the API and web pods, with about 12 requests a second through nginx for 25 s, answered all 291 with 200 once the pods had a 5 s `preStop` pause (see Troubleshooting).
-- That deletion was graceful. Kubernetes stopped sending the pod traffic and let it finish its requests, which is why nothing failed. A forced kill would be closer to drill A's `kill -9`, and isn't tested yet.
+- That deletion was graceful. Kubernetes stopped sending the pod traffic and let it finish its requests, which is why nothing failed. A forced kill seemed closer to drill A's `kill -9`. Drill C later showed it isn't (below).
 - Trade-offs: the images keep the `latest` tag with `imagePullPolicy: Never`, so the script restarts the deployments to pick up a rebuild. The database's data is lost whenever its pod restarts. No NetworkPolicy is set, so the trust rule relies on the database being reachable only from inside the cluster.
 - Nothing runs on AWS, so the AWS cost doesn't change.
-- Follow-up: a rolling-update drill, and a forced pod kill, recorded like drills A and B.
+- Drill C, 2026-10-30 ([drill 03](../../drills/03-rolling-update.md)): a rolling restart under booking load had no failed attempts in 3,872 operations, and three forced kills kept every hard limit. A force delete still gets the preStop hook, SIGTERM and 2 s before SIGKILL on this cluster. Two kills had no failures around the fault, and one had a 9 s outage that's only partly explained.
 
 ## Troubleshooting
 

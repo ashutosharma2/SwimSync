@@ -1,0 +1,14 @@
+# Node and database log lines for c-kill-20261030-133040 (UTC), saved 2026-10-30 from the kind node's journal and the db pod
+
+## containerd
+2026-10-30T08:01:07.219636+00:00 time="2026-10-30T08:01:07.217244264Z" level=info msg="StartContainer for \"851631f79a9390e30b03123a483e262aa252b992264420331f2ce0b465580375\""
+2026-10-30T08:01:07.278521+00:00 time="2026-10-30T08:01:07.278395097Z" level=info msg="StartContainer for \"851631f79a9390e30b03123a483e262aa252b992264420331f2ce0b465580375\" returns successfully"
+2026-10-30T08:01:07.629063+00:00 time="2026-10-30T08:01:07.629032597Z" level=info msg="StopContainer for \"5c841af02561c56135877b84320e35e15d051169be846669a99662eeeecb73c8\" with timeout 2 (s)"
+2026-10-30T08:01:07.630888+00:00 time="2026-10-30T08:01:07.630323847Z" level=info msg="Stop container \"5c841af02561c56135877b84320e35e15d051169be846669a99662eeeecb73c8\" with signal terminated"
+2026-10-30T08:01:08.244224+00:00 time="2026-10-30T08:01:08.243986458Z" level=info msg="received container exit event container_id:\"5c841af02561c56135877b84320e35e15d051169be846669a99662eeeecb73c8\"  id:\"5c841af02561c56135877b84320e35e15d051169be846669a99662e
+2026-10-30T08:01:08.363731+00:00 time="2026-10-30T08:01:08.362908208Z" level=info msg="StopContainer for \"5c841af02561c56135877b84320e35e15d051169be846669a99662eeeecb73c8\" returns successfully"
+
+## kubelet
+2026-10-30T08:01:08.246480+00:00 E1030 08:01:08.246349     742 kuberuntime_container.go:794] "PreStop hook failed" err="command 'sleep 5' exited with 137: " pod="swimsync/api-76644477fc-js4zg" podUID="8277d773-07b5-4ec7-8ad7-15d7e11ff2cb" containerName="api" c
+
+## PostgreSQL
