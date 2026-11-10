@@ -1,0 +1,175 @@
+# What Prometheus scrapes besides the API pods (ADR-018): kube-state-metrics, the PostgreSQL exporter
+# and SwimSync's db-metrics. Each is cut down to what SwimSync's dashboard and alerts use.
+
+# kube-state-metrics reports the state Kubernetes holds about objects: whether a pod is ready, how
+# many replicas a deployment has available, how often a container restarted. The kubelet's metrics
+# don't say any of that. It's limited to pods and deployments in the swimsync namespace, and to the
+# five metrics the dashboard and the SwimSyncNoReadyApi alert read.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-state-metrics
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kube-state-metrics
+  namespace: swimsync
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list, watch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kube-state-metrics
+  namespace: swimsync
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kube-state-metrics
+subjects:
+  - kind: ServiceAccount
+    name: kube-state-metrics
+    namespace: monitoring
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-state-metrics
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kube-state-metrics
+  template:
+    metadata:
+      labels:
+        app: kube-state-metrics
+    spec:
+      serviceAccountName: kube-state-metrics
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      containers:
+        - name: kube-state-metrics
+          image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0
+          args:
+            - --namespaces=swimsync
+            - --resources=pods,deployments
+            - --metric-allowlist=kube_pod_status_ready,kube_pod_container_status_restarts_total,kube_deployment_spec_replicas,kube_deployment_status_replicas_available,kube_deployment_status_replicas_ready
+          ports:
+            - name: metrics
+              containerPort: 8080
+            - name: telemetry
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: telemetry
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+---
+# PostgreSQL's own statistics: connections and what they're doing, the longest open transaction,
+# commits and rollbacks, checkpoints. It connects as the read-only monitor role (k8s/db.yaml). The
+# database trusts connections from inside the cluster, so the connection string has no password.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-exporter
+  template:
+    metadata:
+      labels:
+        app: postgres-exporter
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      containers:
+        - name: postgres-exporter
+          image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+          args:
+            # Checkpoints moved to pg_stat_checkpointer in PostgreSQL 17, and this collector is off
+            # by default in v0.20.1. Drill C's second kill had a checkpoint start 0.7 s after the fault.
+            - --collector.stat_checkpointer
+          env:
+            - name: DATA_SOURCE_NAME
+              value: postgresql://monitor@db.swimsync.svc.cluster.local:5432/swimsync?sslmode=disable
+          ports:
+            - name: metrics
+              containerPort: 9187
+          readinessProbe:
+            tcpSocket:
+              port: metrics
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+---
+# SwimSync's own database numbers (backend/app/db_metrics.py): the outbox backlog and lock waits,
+# read as the monitor role. It runs apart from the outbox worker, so the worker dying can't hide the
+# backlog it leaves. It uses the backend image, which scripts/k8s-up.sh loads into the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db-metrics
+  namespace: swimsync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db-metrics
+  template:
+    metadata:
+      labels:
+        app: db-metrics
+    spec:
+      containers:
+        - name: db-metrics
+          image: swimsync-backend:latest
+          imagePullPolicy: Never # copied into the cluster with kind load, never pulled
+          command: ["python", "scripts/db_metrics.py"]
+          env:
+            - name: DATABASE_URL
+              value: postgresql://monitor@db:5432/swimsync
+          ports:
+            - name: metrics
+              containerPort: 9000
+          # A TCP check, not GET /metrics: every scrape of /metrics queries the database.
+          readinessProbe:
+            tcpSocket:
+              port: metrics
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 48Mi
+            limits:
+              memory: 128Mi

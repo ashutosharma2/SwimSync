@@ -1,0 +1,112 @@
+# Grafana for the kind cluster, as plain manifests (ADR-018). Its one data source, Prometheus, is set
+# in grafana/datasources.yaml, and it loads the dashboards in dashboards/. Kustomize builds both
+# ConfigMaps from those files (kustomization.yaml). Reached only through kubectl port-forward on
+# 127.0.0.1.
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  selector:
+    app: grafana
+  ports:
+    - name: web
+      port: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # never two Grafanas' memory at once on this node
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        fsGroup: 472
+      containers:
+        - name: grafana
+          image: docker.io/grafana/grafana:13.3.0
+          env:
+            # The admin password is in a Secret that scripts/monitoring-up.sh generates, never in
+            # the repository.
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-user
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-password
+            # No usage reports, update checks or news fetched from outside the cluster.
+            - name: GF_ANALYTICS_REPORTING_ENABLED
+              value: "false"
+            - name: GF_ANALYTICS_CHECK_FOR_UPDATES
+              value: "false"
+            - name: GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES
+              value: "false"
+            - name: GF_NEWS_NEWS_FEED_ENABLED
+              value: "false"
+          ports:
+            - name: web
+              containerPort: 3000
+          # Grafana 13 can take a few minutes to start on a busy node. The startup probe gives it up
+          # to 5 minutes before the liveness probe can restart it.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: web
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: web
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: web
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # With a 400Mi limit Grafana 13.3 never finished starting in the Helm install (ADR-018).
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          volumeMounts:
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
+              subPath: datasources.yaml
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
+              subPath: dashboards.yaml
+            - name: dashboards
+              mountPath: /etc/grafana/dashboards
+            - name: data
+              mountPath: /var/lib/grafana
+      volumes:
+        - name: provisioning
+          configMap:
+            name: grafana-provisioning
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+        - name: data
+          emptyDir: {}

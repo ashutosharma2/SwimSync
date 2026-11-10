@@ -1,0 +1,11 @@
+# Grafana's one data source. Loaded at start from the grafana-provisioning ConfigMap.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus # the dashboard JSON refers to it by this id
+    type: prometheus
+    access: proxy
+    url: http://prometheus.monitoring.svc:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 5s # the shortest scrape interval in prometheus.yml

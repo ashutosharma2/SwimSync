@@ -4,11 +4,12 @@
 The ADRs, the drill write-ups and the project story were drafted from what happened. I need to be able to defend every line of them in an interview, so each one gets rewritten after I've worked through the decision behind it.
 
 1. Work through ADR-001 (the session row lock) as an interview question, then rewrite ADR-001 in my own words.
-2. Do the same for ADRs 002 to 017, in order.
+2. Do the same for ADRs 002 to 018, in order.
 3. Rewrite docs/project-story.md and the three drill write-ups.
 
 Still open:
 - What stalls the database in drills A and C (see BACKLOG.md).
+- How much the monitoring, and the Mac's own load, change drill timings (BACKLOG.md, ADR-018).
 
 Done when: every ADR, the three drill write-ups and the project story are in my words, and phase 6 in the README is ✅.
 

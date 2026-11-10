@@ -1,0 +1,28 @@
+# The monitoring, applied with kubectl apply -k k8s/monitoring (scripts/monitoring-up.sh does it).
+# Kustomize builds each ConfigMap below from its file and adds a hash of the contents to its name,
+# then points the Deployments at that name. A changed file therefore restarts the pod that reads it,
+# and an unchanged one doesn't. Prometheus and Grafana only read these files when they start.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - prometheus.yaml
+  - grafana.yaml
+  - exporters.yaml
+configMapGenerator:
+  - name: prometheus-config
+    namespace: monitoring
+    files:
+      - prometheus.yml
+  - name: prometheus-rules
+    namespace: monitoring
+    files:
+      - alerts.yml
+  - name: grafana-provisioning
+    namespace: monitoring
+    files:
+      - grafana/datasources.yaml
+      - grafana/dashboards.yaml
+  - name: grafana-dashboards
+    namespace: monitoring
+    files:
+      - dashboards/swimsync.json

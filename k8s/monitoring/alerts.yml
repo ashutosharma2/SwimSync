@@ -1,0 +1,30 @@
+# SwimSync's alert rules. scripts/monitoring-up.sh checks them with promtool, then loads them into
+# the prometheus-rules ConfigMap. Firing alerts show in Prometheus (Alerts). There's no Alertmanager:
+# at ₹0 there's no notification provider for it to send to.
+groups:
+  - name: swimsync
+    interval: 5s
+    rules:
+      # A working worker clears a notice within about 15 s even when every delivery fails: it tries
+      # five times (waiting 1, 2, 4 and 8 s between tries), then marks the notice failed, which
+      # isn't pending. A notice pending for over 60 s means nothing is working through the queue,
+      # as when drill B's worker died.
+      - alert: SwimSyncOutboxBacklog
+        expr: swimsync_outbox_oldest_pending_seconds > 60
+        labels:
+          severity: warning
+        annotations:
+          summary: A notice has waited over 60 s to be delivered.
+          description: >-
+            The oldest pending notice is {{ $value | humanizeDuration }} old. Check that the worker
+            Deployment has a running pod and that its log shows deliveries.
+
+      # Two API pods normally, and during a pod kill one keeps answering. None available means
+      # every booking is failing.
+      - alert: SwimSyncNoReadyApi
+        expr: kube_deployment_status_replicas_available{namespace="swimsync", deployment="api"} < 1
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: No API pod is ready, so no swimmer can book or cancel.

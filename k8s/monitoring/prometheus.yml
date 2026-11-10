@@ -1,0 +1,94 @@
+# Prometheus's configuration on the kind cluster. scripts/monitoring-up.sh checks it with promtool,
+# then loads it into the prometheus-config ConfigMap (k8s/monitoring/prometheus.yaml).
+#
+# Targets are found by asking Kubernetes for pods (kubernetes_sd_configs), then kept or dropped by
+# their labels. Only what SwimSync's dashboard and alerts use is scraped.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # The API pods' metrics port (backend/app/metrics.py), every 5 s: a drill's fault and recovery
+  # take seconds, and a 30 s scrape would show one or two points of it.
+  - job_name: api
+    scrape_interval: 5s
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [swimsync]
+    relabel_configs:
+      # One target per declared container port, so keep only the port named metrics.
+      - source_labels: [__meta_kubernetes_pod_label_app, __meta_kubernetes_pod_container_port_name]
+        regex: api;metrics
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+
+  # The outbox backlog and lock waits, read from PostgreSQL (backend/app/db_metrics.py).
+  - job_name: db-metrics
+    scrape_interval: 5s
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [swimsync]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app, __meta_kubernetes_pod_container_port_name]
+        regex: db-metrics;metrics
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+
+  # PostgreSQL's own statistics. Every 15 s, not 5: each scrape runs about a dozen queries against
+  # the database a drill is loading. The numbers that matter second by second in a stall, the lock
+  # waits, come from db-metrics' single query above.
+  - job_name: postgres-exporter
+    scrape_interval: 15s
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [monitoring]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app, __meta_kubernetes_pod_container_port_name]
+        regex: postgres-exporter;metrics
+        action: keep
+
+  # Pod readiness, restarts and ready replicas for SwimSync's deployments. Its metrics carry the
+  # namespace and pod of the object they describe, so those labels are kept as scraped
+  # (honor_labels) instead of being replaced by kube-state-metrics' own pod name.
+  - job_name: kube-state-metrics
+    scrape_interval: 5s
+    honor_labels: true
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [monitoring]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app, __meta_kubernetes_pod_container_port_name]
+        regex: kube-state-metrics;metrics
+        action: keep
+
+  # CPU and memory per container, from the kubelet's built-in cAdvisor. Only two metrics, and only
+  # for SwimSync and the monitoring itself, are kept. kind's kubelet serves a self-signed
+  # certificate, so it can't be verified against the cluster's CA; Prometheus still proves who it is
+  # to the kubelet with its service account token.
+  - job_name: kubelet-cadvisor
+    scheme: https
+    metrics_path: /metrics/cadvisor
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tls_config:
+      insecure_skip_verify: true
+    kubernetes_sd_configs:
+      - role: node
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: container_cpu_usage_seconds_total|container_memory_working_set_bytes
+        action: keep
+      - source_labels: [namespace]
+        regex: swimsync|monitoring
+        action: keep

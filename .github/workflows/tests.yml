@@ -87,6 +87,12 @@ jobs:
       # A throwaway cluster on the runner: deploy SwimSync, then book through it. Nothing is pushed.
       - run: scripts/k8s-up.sh
       - run: scripts/k8s-smoke.sh
+      # The monitoring isn't installed here (it's heavy for a CI runner), but its files are checked:
+      # the Prometheus config and alert rules with promtool, and the manifests by building them.
+      - run: |
+          docker run --rm --entrypoint promtool -v "$PWD/k8s/monitoring:/m:ro" quay.io/prometheus/prometheus:v3.16.0 check config --syntax-only /m/prometheus.yml
+          docker run --rm --entrypoint promtool -v "$PWD/k8s/monitoring:/m:ro" quay.io/prometheus/prometheus:v3.16.0 check rules /m/alerts.yml
+          kubectl kustomize k8s/monitoring > /dev/null
 
   terraform:
     runs-on: ubuntu-latest

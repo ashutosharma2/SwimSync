@@ -13,11 +13,11 @@ To try it without installing anything, open [prototype/index.html](prototype/ind
 | Phase | | |
 |---|---|---|
 | 1. Problem framing | ✅ | Desk research, the causes SwimSync designs against, MVP scope |
-| 2. Local core | ✅ | Booking, cancel, idempotency keys, outbox and notifications, honest answers when the database fails, operator capacity changes with an audit log, and operator reads of who's booked and the change log; 52 tests |
+| 2. Local core | ✅ | Booking, cancel, idempotency keys, outbox and notifications, honest answers when the database fails, operator capacity changes with an audit log, and operator reads of who's booked and the change log; 60 tests |
 | 3. Fault drills | ✅ | Drill A (app instance killed mid-request) and drill B (database down, slow, and a lost commit reply), both passing. Drill C (a rolling update and three forced pod kills on Kubernetes) passed too |
 | 4. MVP interface | ✅ | The swimmer screen and the operator screen at `/operator`, both in the pool design and checked in a browser against the real API (37 frontend tests) |
-| 5. Infrastructure design | ✅ | Terraform for a two-zone AWS VPC, ALB, two instances and RDS; validated locally, never applied. The app also runs with Docker Compose and on a local kind cluster |
-| 6. Portfolio | ⏳ | Architecture diagrams, build log, ADRs 001 to 017 and a browser demo done. Drill write-ups and the project story are drafted and need editing |
+| 5. Infrastructure design | ✅ | Terraform for a two-zone AWS VPC, ALB, two instances and RDS; validated locally, never applied. The app also runs with Docker Compose and on a local kind cluster, with optional Prometheus and Grafana monitoring |
+| 6. Portfolio | ⏳ | Architecture diagrams, build log, ADRs 001 to 018 and a browser demo done. Drill write-ups and the project story are drafted and need editing |
 
 The architecture decision records are in [docs/adr/](docs/adr/): one per non-obvious decision, each with the evidence behind it.
 
@@ -106,7 +106,7 @@ PostgreSQL: sessions · bookings · idempotency_keys · outbox · notifications 
 
 **The operator screen:** `/operator` is a second screen, picked by a path check in [frontend/src/main.tsx](frontend/src/main.tsx) instead of a router. The operator types the shared token into a sign-in form, which checks it with `GET /operator/audit` before keeping it in `sessionStorage` for that tab only. A later 403 sends the screen back to the form ([ADR-017](docs/adr/017-operator-token-in-session-storage.md)). Every 5 s the screen reads the sessions, who is booked in the chosen one and the change log. The bookings are drawn as floats in the order they were made, with a wall at the slider's target, so the floats past the wall are the ones a cut would cancel. The slider only previews. A change needs a reason and the apply button, and closing a session asks for confirmation. If a change gets no reply, the screen reads the session back and says "Done" only if the session shows the change; otherwise it says the change isn't confirmed and that repeating it is safe.
 
-For the drills, two app instances run behind HAProxy (drill A), and Toxiproxy sits between the app and PostgreSQL (drill B). The same app also runs in containers with Docker Compose, and on a one-node kind cluster with two API replicas, where drill C runs ([ADR-014](docs/adr/014-docker-compose-beside-native.md), [ADR-015](docs/adr/015-local-kubernetes-with-kind.md)). Nothing runs on AWS.
+For the drills, two app instances run behind HAProxy (drill A), and Toxiproxy sits between the app and PostgreSQL (drill B). The same app also runs in containers with Docker Compose, and on a one-node kind cluster with two API replicas, where drill C runs ([ADR-014](docs/adr/014-docker-compose-beside-native.md), [ADR-015](docs/adr/015-local-kubernetes-with-kind.md)). On the cluster, Prometheus and Grafana can watch the API per pod, the outbox backlog, the database and the pods. The API serves its metrics on a port that nginx never forwards to, and the outbox numbers are read from the outbox table rather than reported by the worker ([ADR-018](docs/adr/018-prometheus-and-grafana-as-plain-manifests.md)). Nothing runs on AWS.
 
 ## Data model and consistency guarantees
 
@@ -186,6 +186,23 @@ Then open http://127.0.0.1:8089. Run `scripts/k8s-smoke.sh` to check a booking e
 
 [ADR-015](docs/adr/015-local-kubernetes-with-kind.md) explains why it's set up this way, and what it does and doesn't show.
 
+### Monitoring on kind (optional)
+
+Prometheus and Grafana can watch SwimSync on the kind cluster. Start them after `scripts/k8s-up.sh`:
+
+```bash
+scripts/monitoring-up.sh
+```
+
+The script checks the Prometheus config and alert rules with promtool, applies [k8s/monitoring/](k8s/monitoring/) with `kubectl apply -k`, and prints two `kubectl port-forward` commands, for Grafana on 127.0.0.1:3000 and Prometheus on 127.0.0.1:9090. Grafana's admin password is generated on the first run, shown once, and kept in a Secret.
+
+- The **SwimSync** dashboard has four rows: the API per pod (answers, slowest 5%, requests open, outcomes, errors), the outbox (notices waiting and the oldest one's age), the database (lock waits, the longest open transaction, connections, commits and rollbacks, checkpoints) and the pods (readiness, ready replicas, CPU, memory, restarts).
+- Prometheus's Alerts page shows `SwimSyncOutboxBacklog`, which fires when a notice has waited over 60 s, and `SwimSyncNoReadyApi`. Nothing sends them anywhere.
+- It takes 500 to 600 MiB of memory, most of it Grafana's (measured twice on 2026-11-10), on a cluster that has 3.8 GiB here. On this Mac its effect on drill timings couldn't be told apart from the host's own load, so before comparing drills, run one with and one without it.
+- Remove it and keep SwimSync with `kubectl --context kind-swimsync delete -k k8s/monitoring`.
+
+[ADR-018](docs/adr/018-prometheus-and-grafana-as-plain-manifests.md) explains the setup, and why it isn't the kube-prometheus-stack Helm chart.
+
 ### Native
 
 Tested on macOS with Homebrew, PostgreSQL 18, Python 3.14 and Node 26. A new terminal opens in your home folder, where `.venv/bin/uvicorn` doesn't exist, so every block below starts with `cd ~/projects/swimsync`. Change the path if you cloned the repo somewhere else.
@@ -253,7 +270,7 @@ To simulate a notification outage, start the worker with `SWIMSYNC_ADAPTER_FAILI
 npm --prefix frontend test
 ```
 
-The backend tests use the `swimsync_test` database (override with `TEST_DATABASE_URL`). Result on 2026-10-30: 52 backend tests and 37 frontend tests passed, locally and in GitHub Actions. The [workflow](.github/workflows/tests.yml) runs both suites against PostgreSQL 18, builds the frontend and both Docker images, deploys them to a throwaway kind cluster and books through it, and runs `terraform validate` on every push to main.
+The backend tests use the `swimsync_test` database (override with `TEST_DATABASE_URL`). Result on 2026-11-10: 60 backend tests and 37 frontend tests passed locally. The [workflow](.github/workflows/tests.yml) runs both suites against PostgreSQL 18, builds the frontend and both Docker images, deploys them to a throwaway kind cluster and books through it, checks the monitoring's config with promtool, and runs `terraform validate` on every push to main.
 
 | File | What it proves |
 |---|---|
@@ -261,6 +278,7 @@ The backend tests use the `swimsync_test` database (override with `TEST_DATABASE
 | [tests/test_outbox.py](tests/test_outbox.py) | A rolled-back booking leaves no notification. The worker delivers, backs off and gives up after 5 attempts, then resumes when the adapter recovers. A crash after delivery doesn't duplicate an inbox entry, 4 workers deliver each notification once, and the worker survives a database outage. |
 | [tests/test_db_failures.py](tests/test_db_failures.py) | Database down gives a fast 503 with `booked: false` and books nothing. A held lock times out in under 1.5 s. A commit that saved but lost its reply gives `outcome_unknown`, and the retry returns the stored booking; a commit that didn't save gives `outcome_unknown`, and the retry books fresh. |
 | [tests/test_api.py](tests/test_api.py) | HTTP behaviour: 201 then 200 on a retry, required headers, the status list, and a cancel that's safe to retry. |
+| [tests/test_metrics.py](tests/test_metrics.py) | `/metrics` isn't served on the API's port. Requests are labelled by route pattern, never the raw path, and unknown paths share one label. Each booking and cancel outcome is counted once, and the two 503s keep their own names. The outbox backlog and its oldest notice's age are read from the table. A booking queued behind a session row lock shows as one lock wait and goes back to zero when the lock is released. An unreadable database is reported as unreachable, with no stale numbers. |
 | [tests/test_operator.py](tests/test_operator.py) | A capacity cut cancels the newest bookings, tells each swimmer why and audits who was affected. A cut above the number booked cancels nobody, the same capacity twice writes nothing, and raising capacity brings nobody back. Twenty bookings racing a cut never exceed the new capacity. Closing cancels everyone and refuses new bookings, and closing twice changes nothing. A swimmer cancelling a booking the pool already cancelled changes nothing. Operator endpoints refuse a missing or wrong token. The operator can read who holds a place, oldest first, and the change log, newest first, and both reads refuse a missing token. |
 | [frontend/src/bookingFlow.test.ts](frontend/src/bookingFlow.test.ts) | The Book and Cancel buttons never show "booked" before the server confirms, retry with the same key, resume the same key after a page reload, treat "unavailable" after an uncertain answer as still uncertain, treat a closed session as final, and let "My bookings" decide when retries run out. |
 | [frontend/src/rope.test.ts](frontend/src/rope.test.ts) | The float rope has one float per place, puts yours first, shows a checking float while a booking is in flight, marks about a fifth of the places as the last ones, and copes with counts that don't add up, since the list can be a few seconds old. |
@@ -311,6 +329,7 @@ The whole project has to cost ₹0. Credits and free trials don't count, because
 | Terraform CLI | ₹0 | BSL; HashiCorp's licence FAQ says personal use is unaffected (checked 2026-10-21). OpenTofu is the fallback |
 | Docker Desktop and the container images (optional) | ₹0 | Docker Desktop is free for personal use, education and small businesses ([licence](https://docs.docker.com/subscription/desktop-license/), checked 2026-10-21). The base images are official Docker Hub images, pulled without an account |
 | kind (optional) | ₹0 | Open source (Apache 2.0). The cluster runs inside Docker on this machine; nothing runs on AWS |
+| Prometheus, Grafana, kube-state-metrics, postgres_exporter, prometheus-client (optional) | ₹0 | Open source: Grafana under AGPL 3.0, the others under Apache 2.0 (prometheus-client also BSD 2-clause); licences checked on GitHub and PyPI 2026-11-10. They run inside the kind cluster, and no alert is sent anywhere |
 | GitHub Free, private repo | ₹0 | Actions minutes are blocked, not billed, without a payment method (GitHub docs, checked 2026-10-21) |
 | AWS | Not used | My account is on the Paid plan, which bills automatically once credits run out. The Terraform is validated locally and never applied |
 
@@ -363,6 +382,8 @@ If you used kind:
 kind delete cluster --name swimsync
 ```
 
+That also removes the monitoring. To remove only the monitoring, run `kubectl --context kind-swimsync delete -k k8s/monitoring`.
+
 Stop the API, the frontend and the worker with Ctrl+C.
 
 ## Known limitations
@@ -376,6 +397,8 @@ Stop the API, the frontend and the worker with Ctrl+C.
 - PostgreSQL is a single point of failure, and there are no backups. In the AWS design, the database stays single-zone unless `db_multi_az` is turned on.
 - The AWS design has never been deployed, so it's validated as Terraform, not proven against AWS. The app also doesn't yet read its database password from Secrets Manager, as the design expects.
 - The drills ran on one Mac. They show how the code behaves under failure, not how AWS would.
+- With no monitoring running, the same 60 s load on the kind cluster gave 0 failures at 22:42 and 15 at 22:53 on 2026-11-10, while the Mac had 6 GB in swap. Drill timings on this machine depend on what else it's doing ([ADR-018](docs/adr/018-prometheus-and-grafana-as-plain-manifests.md)).
+- The monitoring samples every 5 s at best, so a shorter stall can fall between two scrapes, and it doesn't watch the Kubernetes API server or etcd.
 - The app is HTTP only.
 - SwimSync can't show it would have prevented my incident, because that cause is unknown.
 

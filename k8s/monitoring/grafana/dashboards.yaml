@@ -1,0 +1,12 @@
+# Where Grafana finds its dashboards: the files in k8s/monitoring/dashboards/, mounted from the
+# grafana-dashboards ConfigMap.
+apiVersion: 1
+providers:
+  - name: swimsync
+    type: file
+    # The repository's JSON is the source: saving an edit in Grafana's editor is refused, so nothing
+    # drifts from what's committed. Export a changed dashboard into the file instead.
+    allowUiUpdates: false
+    disableDeletion: true
+    options:
+      path: /etc/grafana/dashboards

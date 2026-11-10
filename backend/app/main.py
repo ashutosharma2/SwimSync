@@ -10,15 +10,17 @@ import logging
 import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 import psycopg
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
+from prometheus_client import start_http_server
 from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field
 
-from . import booking, db, operator
+from . import booking, db, metrics, operator
 
 INSTANCE = os.environ.get("SWIMSYNC_INSTANCE", "local")
 
@@ -40,9 +42,23 @@ def drill_pause(swimmer_id, seconds):
         time.sleep(seconds)
 
 
-app = FastAPI(title="SwimSync")
-
 log = logging.getLogger("swimsync.api")
+
+
+@asynccontextmanager
+async def lifespan(app):
+    # Metrics get a port of their own, set only in the cluster (k8s/app.yaml). See app/metrics.py.
+    port = os.environ.get("SWIMSYNC_METRICS_PORT")
+    server = None
+    if port:
+        server, _ = start_http_server(int(port))
+        log.info("metrics on port %s", port)
+    yield
+    if server:
+        server.shutdown()
+
+
+app = FastAPI(title="SwimSync", lifespan=lifespan)
 
 OUTCOME_UNKNOWN = {
     "error": "outcome_unknown",
@@ -100,6 +116,23 @@ def read(work):
 
 
 @app.middleware("http")
+async def measure(request, call_next):
+    started = time.perf_counter()
+    metrics.IN_PROGRESS.inc()
+    status = 500  # what the client gets if the handler raises
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        metrics.IN_PROGRESS.dec()
+        # The route is known only after call_next: routing happens inside it.
+        metrics.REQUEST_SECONDS.labels(request.method, metrics.route_of(request.scope), str(status)).observe(
+            time.perf_counter() - started
+        )
+
+
+@app.middleware("http")
 async def tag_instance(request, call_next):
     # Says which copy of the API answered, so the drills can see traffic move between instances.
     response = await call_next(request)
@@ -134,6 +167,7 @@ def create_booking(session_id: int, swimmer_id: SwimmerId, idempotency_key: Idem
         # Only reachable when the same key is used for two different sessions at the same moment.
         # The transaction rolled back, so nothing was booked.
         status, body = 409, {"error": "a conflicting request with the same Idempotency-Key is in progress"}
+    metrics.OUTCOMES.labels("book", metrics.outcome("book", status, body)).inc()
     # A 201 is only sent after conn.commit() succeeded, so the booking is saved.
     return answer(status, body)
 
@@ -143,6 +177,7 @@ def cancel_booking(booking_id: int, swimmer_id: SwimmerId):
     status, body = run_change(
         lambda conn: booking.cancel(conn, booking_id, swimmer_id), swimmer_id, {"cancelled": False}
     )
+    metrics.OUTCOMES.labels("cancel", metrics.outcome("cancel", status, body)).inc()
     return answer(status, body)
 
 

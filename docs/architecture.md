@@ -5,7 +5,7 @@
 - **Scenario:** SwimSync books places in fictional swimming sessions so that a confirmed booking always means a reserved place, motivated by being turned away from a booked swim.
 - **Obstacle:** the guarantees live in a few lines of SQL inside transactions, plus a worker that runs separately. Without pictures it's hard to see where the lock is held, what's in each transaction and which process does what.
 - **Action:** one diagram per view, drawn from the code as it is today. Solid lines and boxes are built; dashed ones are planned.
-- **Result:** you can follow a booking from the request to the committed row, then see two swimmers race for the last place, which bookings a capacity cut cancels, how a notification reaches the inbox even when delivery fails, the same app running in containers and on a local Kubernetes cluster, and what the operator screen says when a change gets no reply.
+- **Result:** you can follow a booking from the request to the committed row, then see two swimmers race for the last place, which bookings a capacity cut cancels, how a notification reaches the inbox even when delivery fails, the same app running in containers and on a local Kubernetes cluster, what the operator screen says when a change gets no reply, and what the monitoring on that cluster reads.
 - **Troubleshooting:** the diagrams are only useful while they're accurate, so they're updated at the end of every phase, alongside the README.
 
 **Contents**
@@ -31,6 +31,7 @@
 19. [A local Kubernetes cluster (kind)](#19-a-local-kubernetes-cluster-kind)
 20. [Drill C: rolling update and pod kill](#20-drill-c-rolling-update-and-pod-kill)
 21. [The operator screen](#21-the-operator-screen)
+22. [Monitoring on the kind cluster](#22-monitoring-on-the-kind-cluster)
 
 ---
 
@@ -666,3 +667,44 @@ sequenceDiagram
     end
     Note over S,A: any later 403: the token is removed and the sign-in form comes back
 ```
+
+## 22. Monitoring on the kind cluster
+
+`scripts/monitoring-up.sh` adds Prometheus and Grafana to the kind cluster as plain manifests ([ADR-018](adr/018-prometheus-and-grafana-as-plain-manifests.md)). Prometheus finds its targets by asking Kubernetes for pods with the right labels and a port named `metrics`. The API serves its metrics on port 9000, which neither the api Service nor nginx sends traffic to. db-metrics reads the outbox backlog and lock waits from PostgreSQL, apart from the worker, so a dead worker still shows up. Both database readers use the read-only `monitor` role.
+
+```mermaid
+flowchart LR
+    You["You, on this Mac"]
+
+    subgraph Kind["kind cluster 'swimsync'"]
+        subgraph App["namespace swimsync"]
+            Api1["api pod<br/>:8000 app, :9000 metrics"]
+            Api2["api pod<br/>:8000 app, :9000 metrics"]
+            DbMetrics["db-metrics pod<br/>outbox backlog, lock waits"]
+            Worker["worker pod"]
+            Db[("db pod: PostgreSQL")]
+        end
+        subgraph Mon["namespace monitoring"]
+            Prom["Prometheus<br/>scrapes, keeps 2 days,<br/>evaluates 2 alert rules"]
+            Grafana["Grafana<br/>SwimSync dashboard"]
+            Ksm["kube-state-metrics<br/>pods and deployments<br/>in swimsync only"]
+            PgExp["postgres_exporter"]
+        end
+        Kubelet["kubelet's cAdvisor<br/>CPU and memory per container"]
+    end
+
+    Prom -->|"every 5 s"| Api1
+    Prom -->|"every 5 s"| Api2
+    Prom -->|"every 5 s"| DbMetrics
+    Prom -->|"every 5 s"| Ksm
+    Prom -->|"every 15 s"| PgExp
+    Prom -->|"every 30 s"| Kubelet
+    DbMetrics -->|"as monitor"| Db
+    PgExp -->|"as monitor"| Db
+    Worker --> Db
+    Grafana --> Prom
+    You -->|"kubectl port-forward<br/>127.0.0.1:3000"| Grafana
+    You -->|"kubectl port-forward<br/>127.0.0.1:9090"| Prom
+```
+
+There's no Alertmanager: at ₹0 there's nothing to send an alert to, so firing alerts are read on Prometheus's Alerts page. With the worker scaled to zero, `SwimSyncOutboxBacklog` fired 70 s after three bookings and cleared 18 s after the worker was back. CI checks the Prometheus config and rules with promtool and builds the manifests, but doesn't install the monitoring.

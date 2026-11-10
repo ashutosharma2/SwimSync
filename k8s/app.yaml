@@ -56,8 +56,16 @@ spec:
                   name: operator
                   key: token
                   optional: true
+            - name: SWIMSYNC_METRICS_PORT
+              value: "9000"
           ports:
-            - containerPort: 8000
+            - name: http
+              containerPort: 8000
+            # Prometheus metrics, on a port of their own (backend/app/metrics.py). The Service and
+            # nginx only ever send traffic to 8000, so this port can't be reached from outside the
+            # cluster. Prometheus finds it by its name (k8s/monitoring/prometheus.yml).
+            - name: metrics
+              containerPort: 9000
           lifecycle:
             # A pod told to stop keeps answering for 5 s while the cluster stops routing new
             # connections to it. Without this, the API refuses new connections at once, and a rolling
